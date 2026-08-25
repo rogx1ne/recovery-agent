@@ -46,3 +46,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*.db-shm
+*.db-wal
+*.db-journal
