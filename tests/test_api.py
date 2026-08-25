@@ -170,7 +170,7 @@ class TestRecovery:
         assert r.status_code == 200
         body = r.json()
         assert body["transaction_id"] == tx_id
-        assert body["final_status"] in ("recovered", "escalated")  # depends on mock
+        assert body["final_status"] in ("retry_initiated", "escalated")  # depends on mock
         assert "steps_taken" in body
         assert "detected" in body["steps_taken"]
 
@@ -210,7 +210,7 @@ class TestRecovery:
 
         assert r.status_code == 200
         body = r.json()
-        assert body["final_status"] == "recovered"
+        assert body["final_status"] == "link_sent"
         assert body["artefacts"].get("payment_link_url") == "https://rzp.io/i/mock123"
 
 

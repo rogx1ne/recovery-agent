@@ -150,8 +150,13 @@ def main():
             tx_id = resp["id"]
             amount_inr = case["amount"] / 100
             total_at_risk += case["amount"]
-            created.append({"id": tx_id, "label": label, "amount": case["amount"],
-                             "payment_id": case["razorpay_payment_id"], "category": category})
+            created.append({
+                "id": tx_id,
+                "label": label,
+                "amount": case["amount"],
+                "payment_id": case["razorpay_payment_id"],
+                "category": category,
+            })
             print(f"  {GREEN('✓')} [{i:02d}] tx_id={tx_id:3d}  ₹{amount_inr:8,.2f}  {label}")
         else:
             print(f"  {RED('✗')} [{i:02d}] FAILED ({status_code}) — {label}: {resp.get('detail')}")
@@ -166,8 +171,6 @@ def main():
     print(f"\n{CYAN('PHASE 2')} — Running recovery pipeline\n")
 
     results: list[dict] = []
-    total_recovered_paise = 0
-    total_escalated_paise = 0
 
     for tx in created:
         print(f"  Processing tx {tx['id']} — {tx['label']}...")
@@ -177,7 +180,7 @@ def main():
             final = resp.get("final_status", "?")
             artefacts = resp.get("artefacts", {})
 
-            colour = GREEN if final == "recovered" else YELLOW if final == "escalated" else RED
+            colour = CYAN if final in ("retry_initiated", "link_sent") else YELLOW if final == "escalated" else GREEN
             print(f"    → {colour(final.upper())}  steps: {' → '.join(resp.get('steps_taken', []))}")
 
             if artefacts.get("payment_link_url"):
@@ -185,17 +188,61 @@ def main():
             if artefacts.get("retry_order_id"):
                 print(f"    → Order: {DIM(artefacts['retry_order_id'])}")
 
-            if final == "recovered":
-                total_recovered_paise += tx["amount"]
-            elif final == "escalated":
-                total_escalated_paise += tx["amount"]
-
             results.append({**tx, "final_status": final, "artefacts": artefacts})
         else:
             print(f"    → {RED('ERROR')} ({status_code}): {resp.get('detail')}")
             results.append({**tx, "final_status": "error", "artefacts": {}})
 
-        time.sleep(0.3)   # brief pause between API calls
+        time.sleep(0.2)
+
+    # ── PHASE 2.5: Simulate Webhook Confirmations ─────────────────────────
+    print(f"\n{CYAN('PHASE 2.5')} — Simulating Webhook Payment Confirmations\n")
+    print("  (Simulating payment completion for a subset of initiated/link_sent transactions)\n")
+
+    confirmed_count = 0
+    # Simulate payment completion for 5 of the non-escalated transactions
+    webhook_candidates = [r for r in results if r["final_status"] in ("retry_initiated", "link_sent")][:5]
+
+    for tx in webhook_candidates:
+        payment_id = tx["payment_id"]
+        artefacts = tx["artefacts"]
+
+        if tx["final_status"] == "link_sent" and artefacts.get("payment_link_id"):
+            link_id = artefacts["payment_link_id"]
+            payload = {
+                "event": "payment_link.paid",
+                "payload": {
+                    "payment_link": {
+                        "entity": {
+                            "id": link_id,
+                            "reference_id": f"recovery_{payment_id}",
+                            "amount_paid": tx["amount"],
+                        }
+                    }
+                },
+            }
+        else:
+            payload = {
+                "event": "payment.captured",
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "id": f"pay_captured_{tx['id']}",
+                            "notes": {"original_payment_id": payment_id},
+                        }
+                    }
+                },
+            }
+
+        code, wb_resp = _post(f"{base}/api/v1/webhooks/razorpay", payload)
+        if code == 200 and wb_resp.get("action") in ("marked_recovered", "already_recovered"):
+            tx["final_status"] = "recovered"
+            confirmed_count += 1
+            print(f"  {GREEN('✓')} Webhook confirmed tx_id={tx['id']:3d}  {tx['label']} → {GREEN('RECOVERED')}")
+        else:
+            print(f"  {RED('✗')} Webhook failed for tx_id={tx['id']:3d}: {wb_resp}")
+
+    print(f"\n  {GREEN(f'{confirmed_count} payments confirmed via webhook.')}")
 
     # ── PHASE 3: Detailed audit trails ────────────────────────────────────
     print(f"\n{CYAN('PHASE 3')} — AI-generated audit trails\n")
@@ -220,40 +267,47 @@ def main():
     print(BOLD("  📊  BATCH RESULTS SUMMARY"))
     print(BOLD("═" * 65))
 
-    recovered_count = sum(1 for r in results if r["final_status"] == "recovered")
-    escalated_count = sum(1 for r in results if r["final_status"] == "escalated")
-    error_count     = sum(1 for r in results if r["final_status"] == "error")
-    recovery_rate   = (recovered_count / len(results) * 100) if results else 0
-    money_rate      = (total_recovered_paise / total_at_risk * 100) if total_at_risk else 0
+    status_code, stats = _get(f"{base}/api/v1/stats/summary")
+    if status_code == 200:
+        by_status = stats.get("by_status", {})
+        rec_count = by_status.get("recovered", 0)
+        pending_conf_count = by_status.get("pending_confirmation", 0)
+        esc_count = by_status.get("escalated", 0)
+        total_tx = stats.get("total_transactions", 0)
 
-    print(f"\n  Total transactions    : {BOLD(str(len(results)))}")
-    print(f"  Total at-risk         : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
-    print(f"  Recovered             : {GREEN(f'₹{total_recovered_paise/100:>10,.2f}')}  ({recovered_count} transactions)")
-    print(f"  Escalated             : {YELLOW(f'₹{total_escalated_paise/100:>10,.2f}')}  ({escalated_count} transactions — manual review)")
-    if error_count:
-        print(f"  Errors                : {RED(str(error_count))} transactions")
-    print(f"\n  {'Recovery rate (count)':<24}: {GREEN(f'{recovery_rate:.1f}%')}")
-    print(f"  {'Recovery rate (value)':<24}: {GREEN(f'{money_rate:.1f}%')}")
+        amt_rec_inr = stats.get("amount_recovered_inr", 0.0)
+        amt_pending_inr = stats.get("amount_pending_confirmation_inr", 0.0)
+        rate_pct = stats.get("recovery_rate_pct", 0.0)
+
+        print(f"\n  Total transactions            : {BOLD(str(total_tx))}")
+        print(f"  Total at-risk                 : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
+        print(f"  Confirmed Recovered (Webhook) : {GREEN(f'₹{amt_rec_inr:>10,.2f}')}  ({rec_count} transactions)")
+        print(f"  Awaiting Confirmation        : {CYAN(f'₹{amt_pending_inr:>10,.2f}')}  ({pending_conf_count} transactions)")
+        print(f"  Escalated (Manual Review)    : {YELLOW(f'₹{(total_at_risk/100 - amt_rec_inr - amt_pending_inr):>10,.2f}')}  ({esc_count} transactions)")
+        print(f"\n  {'Recovery Rate (Confirmed)':<30}: {GREEN(f'{rate_pct:.1f}%')}")
+    else:
+        print(RED(f"Error fetching stats: {stats}"))
 
     # ── Category breakdown ─────────────────────────────────────────────────
     print(f"\n  {BOLD('By category:')}")
-    _, cat_metrics = _get(f"{base}/api/v1/metrics/by-category")
+    _, cat_metrics = _get(f"{base}/api/v1/stats/by-category")
     categories = cat_metrics.get("categories", {})
     for cat, data in sorted(categories.items()):
         counts = data.get("counts", {})
         rate = data.get("recovery_rate_pct", 0)
         rec = counts.get("recovered", 0)
+        pending_c = data.get("pending_confirmation_count", 0)
         esc = counts.get("escalated", 0)
-        total = rec + esc + counts.get("failed", 0)
+        total = rec + pending_c + esc
         bar_fill = "█" * int(rate / 10)
         bar_empty = "░" * (10 - int(rate / 10))
         colour = GREEN if rate >= 70 else YELLOW if rate >= 40 else RED
-        print(f"    {cat:<30} [{colour(bar_fill + bar_empty)}] {colour(f'{rate:5.1f}%')}  ({rec}/{total})")
+        print(f"    {cat:<30} [{colour(bar_fill + bar_empty)}] {colour(f'{rate:5.1f}%')}  (Confirmed: {rec}, Pending: {pending_c}, Escalated: {esc})")
 
     print()
     print(BOLD("═" * 65))
     print(f"  Full audit trail: {base}/api/v1/audit/")
-    print(f"  Metrics:          {base}/api/v1/metrics/summary")
+    print(f"  Stats summary:   {base}/api/v1/stats/summary")
     print(f"  Swagger UI:       {base}/docs")
     print(BOLD("═" * 65))
     print()

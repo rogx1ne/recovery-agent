@@ -9,16 +9,16 @@
 
 > *"Don't just identify the problem. Show measured money recovered across a batch, with compliant escalation, stopping rules, and an audit trail."* — **Razorpay Track 03 Bar**
 
-When tested across a synthetic batch of **10 real-world payment failure scenarios**:
+When tested across an end-to-end batch of payment failure scenarios with simulated Razorpay webhook payment confirmations:
 
 | Metric | Measured Value |
 |---|---|
-| **Total At-Risk Revenue** | **₹6,44,900.00** |
-| **Total Money Recovered** | **₹4,94,900.00** |
-| **Value Recovery Rate** | **76.7%** |
-| **Count Recovery Rate** | **70.0% (7 / 10 transactions)** |
-| **Escalated (Manual Review)** | **₹1,50,000.00 (3 transactions)** |
-| **Average Automated Retries** | **1.2 retries / transaction** |
+| **Total At-Risk Revenue** | **₹8,947.00** |
+| **Confirmed Recovered (Webhook)** | **₹4,748.00 (6 transactions)** |
+| **Awaiting Confirmation (`retry_initiated` / `link_sent`)** | **₹1,999.00 (1 transaction)** |
+| **Escalated (Manual Review)** | **₹2,200.00 (4 transactions)** |
+| **Confirmed Value Recovery Rate** | **53.1%** |
+| **Confirmed Count Recovery Rate** | **54.5% (6 / 11 transactions)** |
 
 ---
 

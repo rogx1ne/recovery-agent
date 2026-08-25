@@ -17,8 +17,10 @@ class TransactionStatus(str, enum.Enum):
     """Lifecycle status of a payment transaction."""
     PENDING = "pending"
     FAILED = "failed"
-    RECOVERED = "recovered"
-    ESCALATED = "escalated"   # all recovery attempts exhausted
+    RETRY_INITIATED = "retry_initiated"   # order created, awaiting payment confirmation
+    LINK_SENT = "link_sent"                # payment link created, awaiting payment confirmation
+    RECOVERED = "recovered"              # payment confirmed via webhook or client capture
+    ESCALATED = "escalated"              # all recovery attempts exhausted
 
 
 class RootCauseCategory(str, enum.Enum):

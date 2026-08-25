@@ -79,28 +79,28 @@ export function Dashboard({ setPage, setSelectedTx }) {
       ) : metrics && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard
-            label="Amount Recovered"
+            label="Confirmed Recovered"
             value={fmt(metrics.amount_recovered_paise || 0)}
-            sub={`${metrics.by_status?.recovered || 0} transactions`}
+            sub={`${metrics.by_status?.recovered || 0} confirmed via webhook`}
             accent="green"
           />
           <MetricCard
             label="Recovery Rate"
             value={`${(metrics.recovery_rate_pct || 0).toFixed(1)}%`}
-            sub="of pipeline-attempted"
+            sub="confirmed / attempted"
             accent="blue"
           />
           <MetricCard
-            label="Still Failed"
-            value={metrics.by_status?.failed || 0}
-            sub="need attention"
-            accent="red"
+            label="Awaiting Confirmation"
+            value={fmt(metrics.amount_pending_confirmation_paise || 0)}
+            sub={`${metrics.by_status?.pending_confirmation || 0} initiated/link sent`}
+            accent="yellow"
           />
           <MetricCard
             label="Escalated"
             value={metrics.by_status?.escalated || 0}
             sub="manual review needed"
-            accent="yellow"
+            accent="red"
           />
         </div>
       )}

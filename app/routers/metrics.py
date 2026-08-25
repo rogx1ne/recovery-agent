@@ -42,8 +42,11 @@ def get_summary(db: DbDep):
     failed_count = status_counts.get(TransactionStatus.FAILED.value, 0)
     escalated_count = status_counts.get(TransactionStatus.ESCALATED.value, 0)
     pending_count = status_counts.get(TransactionStatus.PENDING.value, 0)
+    retry_initiated_count = status_counts.get(TransactionStatus.RETRY_INITIATED.value, 0)
+    link_sent_count = status_counts.get(TransactionStatus.LINK_SENT.value, 0)
+    pending_confirmation_count = retry_initiated_count + link_sent_count
 
-    # Amount recovered = sum of amounts for RECOVERED transactions
+    # Amount recovered = sum of amounts for RECOVERED transactions ONLY
     amount_recovered = (
         db.query(func.sum(Transaction.amount))
         .filter(Transaction.status == TransactionStatus.RECOVERED)
@@ -51,7 +54,15 @@ def get_summary(db: DbDep):
         or 0
     )
 
-    attempted = recovered_count + escalated_count  # transactions that went through the pipeline
+    # Amount pending confirmation = sum of amounts for RETRY_INITIATED and LINK_SENT
+    amount_pending_confirmation = (
+        db.query(func.sum(Transaction.amount))
+        .filter(Transaction.status.in_([TransactionStatus.RETRY_INITIATED, TransactionStatus.LINK_SENT]))
+        .scalar()
+        or 0
+    )
+
+    attempted = recovered_count + pending_confirmation_count + escalated_count  # transactions that went through pipeline
     recovery_rate_pct = (recovered_count / attempted * 100) if attempted > 0 else 0.0
 
     return {
@@ -59,12 +70,17 @@ def get_summary(db: DbDep):
         "by_status": {
             "pending": pending_count,
             "failed": failed_count,
+            "retry_initiated": retry_initiated_count,
+            "link_sent": link_sent_count,
+            "pending_confirmation": pending_confirmation_count,
             "recovered": recovered_count,
             "escalated": escalated_count,
         },
         "recovery_rate_pct": round(recovery_rate_pct, 2),
         "amount_recovered_paise": amount_recovered,
         "amount_recovered_inr": round(amount_recovered / 100, 2),
+        "amount_pending_confirmation_paise": amount_pending_confirmation,
+        "amount_pending_confirmation_inr": round(amount_pending_confirmation / 100, 2),
         "pipeline_attempted": attempted,
     }
 
@@ -106,7 +122,11 @@ def get_by_category(db: DbDep):
         counts = data["counts"]
         recovered = counts.get(TransactionStatus.RECOVERED.value, 0)
         escalated = counts.get(TransactionStatus.ESCALATED.value, 0)
-        attempted = recovered + escalated
+        retry_initiated = counts.get(TransactionStatus.RETRY_INITIATED.value, 0)
+        link_sent = counts.get(TransactionStatus.LINK_SENT.value, 0)
+        pending_confirmation = retry_initiated + link_sent
+        data["pending_confirmation_count"] = pending_confirmation
+        attempted = recovered + pending_confirmation + escalated
         data["recovery_rate_pct"] = round((recovered / attempted * 100) if attempted > 0 else 0.0, 2)
 
     return {"categories": summary}

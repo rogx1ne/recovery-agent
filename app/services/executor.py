@@ -285,21 +285,19 @@ def _handle_immediate_retry(
     db: Session, tx: Transaction, policy: RecoveryPolicy, artefacts: dict
 ) -> tuple[TransactionStatus, str, str]:
     """
-    Try up to policy.max_retries times.  Escalate if all fail.
+    Try up to policy.max_retries times. Escalate if all fail.
     """
     last_order = None
     while should_retry(policy, tx.retry_count):
         last_order = _attempt_retry(tx, db, policy)
         if last_order:
             artefacts["retry_order_id"] = last_order.get("id")
-            # In a real system we'd wait for a webhook to confirm success.
-            # For the agent pipeline we treat order creation = recovery initiated.
             return (
-                TransactionStatus.RECOVERED,
+                TransactionStatus.RETRY_INITIATED,
                 f"Recovery initiated via Razorpay order {last_order.get('id')}. "
-                f"Total retries: {tx.retry_count}.",
-                "Razorpay order created successfully. The customer's frontend would "
-                "use this order to complete checkout. Marking as recovered.",
+                f"Total retries: {tx.retry_count}. Awaiting payment confirmation.",
+                "Razorpay order created successfully. The customer's frontend can "
+                "use this order to complete checkout. Recovery initiated, awaiting payment confirmation.",
             )
 
     # All retries exhausted
@@ -315,7 +313,7 @@ def _handle_retry_then_link(
     db: Session, tx: Transaction, policy: RecoveryPolicy, artefacts: dict
 ) -> tuple[TransactionStatus, str, str]:
     """
-    Try once; if it succeeds, mark recovered.  If it fails (or retries exhausted),
+    Try once; if it succeeds, set status to retry_initiated. If it fails (or retries exhausted),
     fall back to a payment link.
     """
     if should_retry(policy, tx.retry_count):
@@ -323,9 +321,9 @@ def _handle_retry_then_link(
         if order:
             artefacts["retry_order_id"] = order.get("id")
             return (
-                TransactionStatus.RECOVERED,
-                f"Retry succeeded. Razorpay order {order.get('id')} created.",
-                "First retry attempt succeeded. Payment link fallback not needed.",
+                TransactionStatus.RETRY_INITIATED,
+                f"Retry order {order.get('id')} created. Recovery initiated, awaiting payment confirmation.",
+                "First retry attempt created Razorpay order. Recovery initiated, awaiting payment confirmation.",
             )
         # Retry failed — fall through to payment link
 
@@ -337,7 +335,7 @@ def _handle_payment_link(
     tx: Transaction, policy: RecoveryPolicy, artefacts: dict
 ) -> tuple[TransactionStatus, str, str]:
     """
-    Create a Razorpay payment link and mark as recovered (link sent).
+    Create a Razorpay payment link and mark as link_sent (awaiting payment confirmation).
     """
     from app.config import get_settings
     from app.services.llm_classifier import generate_recovery_message
@@ -368,12 +366,12 @@ def _handle_payment_link(
         artefacts["recovery_message"] = msg
 
         return (
-            TransactionStatus.RECOVERED,
+            TransactionStatus.LINK_SENT,
             f"Payment link created: {short_url} (link id: {link_id}). "
             f"Expires in {settings.payment_link_expire_minutes} minutes.",
             (
                 "A Razorpay payment link was generated alongside an AI-crafted Hinglish recovery "
-                "message ready for WhatsApp/SMS dispatch. The customer can retry payment securely."
+                "message ready for WhatsApp/SMS dispatch. Link sent, awaiting payment confirmation."
             ),
         )
     except Exception as exc:
