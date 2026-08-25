@@ -58,11 +58,12 @@ def create_transaction(payload: TransactionCreate, db: DbDep):
         currency=payload.currency,
         status=payload.status,
         failure_reason_code=payload.failure_reason_code,
+        batch_id=payload.batch_id,
     )
     db.add(tx)
     db.commit()
     db.refresh(tx)
-    logger.info("Created transaction id=%d rzp_id=%s", tx.id, tx.razorpay_payment_id)
+    logger.info("Created transaction id=%d rzp_id=%s batch_id=%s", tx.id, tx.razorpay_payment_id, tx.batch_id)
     return tx
 
 
@@ -70,12 +71,15 @@ def create_transaction(payload: TransactionCreate, db: DbDep):
     "/",
     response_model=TransactionListResponse,
     summary="List transactions",
-    description="List all tracked transactions, optionally filtered by status.",
+    description="List all tracked transactions, optionally filtered by status or batch ID.",
 )
 def list_transactions(
     db: DbDep,
     status_filter: Optional[TransactionStatus] = Query(
         default=None, alias="status", description="Filter by transaction status"
+    ),
+    batch_id: Optional[str] = Query(
+        default=None, description="Filter by batch ID"
     ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -83,6 +87,8 @@ def list_transactions(
     q = db.query(Transaction)
     if status_filter:
         q = q.filter(Transaction.status == status_filter)
+    if batch_id:
+        q = q.filter(Transaction.batch_id == batch_id)
     total = q.count()
     items = q.order_by(Transaction.id.desc()).offset(offset).limit(limit).all()
     return TransactionListResponse(total=total, items=items)

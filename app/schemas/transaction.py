@@ -43,6 +43,12 @@ class TransactionCreate(BaseModel):
         examples=["CARD_DECLINED"],
         description="Raw error_reason string from Razorpay (optional at creation time)",
     )
+    batch_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        examples=["batch_20260825_001"],
+        description="Optional batch identifier to scope transactions by run",
+    )
 
 
 # ─── Response schemas ─────────────────────────────────────────────────────────
@@ -57,6 +63,7 @@ class TransactionResponse(BaseModel):
     failure_reason_code: Optional[str]
     root_cause_category: Optional[RootCauseCategory]
     retry_count: int
+    batch_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -19,8 +19,11 @@ async function request(method, path, body) {
 
 export const api = {
   // Transactions
-  listTransactions: (limit = 50, offset = 0) =>
-    request("GET", `/transactions/?limit=${limit}&offset=${offset}`),
+  listTransactions: (limit = 50, offset = 0, batchId = null) =>
+    request(
+      "GET",
+      `/transactions/?limit=${limit}&offset=${offset}${batchId ? `&batch_id=${encodeURIComponent(batchId)}` : ""}`
+    ),
   getTransaction: (id) => request("GET", `/transactions/${id}`),
 
   // Recovery
@@ -32,6 +35,10 @@ export const api = {
   listAuditLogs: (limit = 20) => request("GET", `/audit/?limit=${limit}`),
 
   // Stats (renamed from /metrics to avoid ad blocker blocks)
-  getSummary: () => request("GET", `/stats/summary`),
-  getByCategory: () => request("GET", `/stats/by-category`),
+  listBatches: () => request("GET", `/stats/batches`),
+  getSummary: (batchId = null) =>
+    request("GET", `/stats/summary${batchId ? `?batch_id=${encodeURIComponent(batchId)}` : ""}`),
+  getByCategory: (batchId = null) =>
+    request("GET", `/stats/by-category${batchId ? `?batch_id=${encodeURIComponent(batchId)}` : ""}`),
 };
+

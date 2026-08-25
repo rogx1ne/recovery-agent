@@ -125,15 +125,17 @@ def main():
 
     # Unique suffix to avoid conflicts on re-runs
     ts = datetime.now(timezone.utc).strftime("%H%M%S")
+    batch_id = f"batch_{ts}"
 
     print()
     print(BOLD("═" * 65))
     print(BOLD("  🤖  Recovery Agent — Live Demo"))
     print(BOLD(f"  API: {base}"))
+    print(BOLD(f"  Batch ID: {batch_id}"))
     print(BOLD("═" * 65))
 
     # ── PHASE 1: Create failed transactions ────────────────────────────────
-    print(f"\n{CYAN('PHASE 1')} — Registering {len(DEMO_BATCH)} failed transactions\n")
+    print(f"\n{CYAN('PHASE 1')} — Registering {len(DEMO_BATCH)} failed transactions (batch: {batch_id})\n")
 
     total_at_risk = 0
     created: list[dict] = []
@@ -143,6 +145,7 @@ def main():
         category = case.pop("_category")
         case["razorpay_payment_id"] += f"_{ts}"
         case["currency"] = "INR"
+        case["batch_id"] = batch_id
 
         status_code, resp = _post(f"{base}/api/v1/transactions/", case)
 
@@ -262,65 +265,59 @@ def main():
             print(f"      {DIM(reasoning_preview)}{ellipsis}")
         print()
 
-    # ── PHASE 4: Final metrics summary ────────────────────────────────────
+    # ── PHASE 4: Final metrics summary (Batch-Scoped from API) ─────────────
     print(BOLD("═" * 65))
-    print(BOLD("  📊  BATCH RESULTS SUMMARY"))
+    print(BOLD(f"  📊  BATCH RESULTS SUMMARY (Batch: {batch_id})"))
     print(BOLD("═" * 65))
 
-    total_batch_count = len(results)
-    rec_count = sum(1 for r in results if r["final_status"] == "recovered")
-    pending_conf_count = sum(1 for r in results if r["final_status"] in ("retry_initiated", "link_sent"))
-    esc_count = sum(1 for r in results if r["final_status"] == "escalated")
+    status_code, stats = _get(f"{base}/api/v1/stats/summary?batch_id={batch_id}")
+    if status_code == 200:
+        by_status = stats.get("by_status", {})
+        rec_count = by_status.get("recovered", 0)
+        pending_conf_count = by_status.get("pending_confirmation", 0)
+        esc_count = by_status.get("escalated", 0)
+        total_tx = stats.get("total_transactions", 0)
 
-    amt_rec_paise = sum(r["amount"] for r in results if r["final_status"] == "recovered")
-    amt_pending_paise = sum(r["amount"] for r in results if r["final_status"] in ("retry_initiated", "link_sent"))
-    amt_esc_paise = sum(r["amount"] for r in results if r["final_status"] == "escalated")
+        amt_rec_inr = stats.get("amount_recovered_inr", 0.0)
+        amt_pending_inr = stats.get("amount_pending_confirmation_inr", 0.0)
+        rate_pct = stats.get("recovery_rate_pct", 0.0)
+        value_rate_pct = (stats.get("amount_recovered_paise", 0) / total_at_risk * 100) if total_at_risk > 0 else 0.0
+        amt_esc_inr = (total_at_risk / 100) - amt_rec_inr - amt_pending_inr
 
-    amt_rec_inr = amt_rec_paise / 100
-    amt_pending_inr = amt_pending_paise / 100
-    amt_esc_inr = amt_esc_paise / 100
+        print(f"\n  Total transactions            : {BOLD(str(total_tx))}")
+        print(f"  Total at-risk                 : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
+        print(f"  Confirmed Recovered (Webhook) : {GREEN(f'₹{amt_rec_inr:>10,.2f}')}  ({rec_count} transactions)")
+        print(f"  Awaiting Confirmation        : {CYAN(f'₹{amt_pending_inr:>10,.2f}')}  ({pending_conf_count} transactions)")
+        print(f"  Escalated (Manual Review)    : {YELLOW(f'₹{amt_esc_inr:>10,.2f}')}  ({esc_count} transactions)")
+        print(f"\n  {'Recovery Rate (Confirmed)':<30}: {GREEN(f'{rate_pct:.1f}%')} (count) | {GREEN(f'{value_rate_pct:.1f}%')} (value)")
+    else:
+        print(RED(f"Error fetching stats from API: {stats}"))
 
-    rate_pct = (rec_count / total_batch_count * 100) if total_batch_count > 0 else 0.0
-    value_rate_pct = (amt_rec_paise / total_at_risk * 100) if total_at_risk > 0 else 0.0
-
-    print(f"\n  Total transactions            : {BOLD(str(total_batch_count))}")
-    print(f"  Total at-risk                 : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
-    print(f"  Confirmed Recovered (Webhook) : {GREEN(f'₹{amt_rec_inr:>10,.2f}')}  ({rec_count} transactions)")
-    print(f"  Awaiting Confirmation        : {CYAN(f'₹{amt_pending_inr:>10,.2f}')}  ({pending_conf_count} transactions)")
-    print(f"  Escalated (Manual Review)    : {YELLOW(f'₹{amt_esc_inr:>10,.2f}')}  ({esc_count} transactions)")
-    print(f"\n  {'Recovery Rate (Confirmed)':<30}: {GREEN(f'{rate_pct:.1f}%')} (count) | {GREEN(f'{value_rate_pct:.1f}%')} (value)")
-
-    # ── Category breakdown ─────────────────────────────────────────────────
+    # ── Category breakdown (Batch-Scoped from API) ─────────────────────────
     print(f"\n  {BOLD('By category:')}")
-    cat_summary = {}
-    for r in results:
-        cat = r["category"]
-        if cat not in cat_summary:
-            cat_summary[cat] = {"recovered": 0, "pending": 0, "escalated": 0, "total": 0}
-        cat_summary[cat]["total"] += 1
-        if r["final_status"] == "recovered":
-            cat_summary[cat]["recovered"] += 1
-        elif r["final_status"] in ("retry_initiated", "link_sent"):
-            cat_summary[cat]["pending"] += 1
-        else:
-            cat_summary[cat]["escalated"] += 1
-
-    for cat, data in sorted(cat_summary.items()):
-        rec = data["recovered"]
-        pending_c = data["pending"]
-        esc = data["escalated"]
-        total = data["total"]
-        rate = (rec / total * 100) if total > 0 else 0.0
-        bar_fill = "█" * int(rate / 10)
-        bar_empty = "░" * (10 - int(rate / 10))
-        colour = GREEN if rate >= 70 else YELLOW if rate >= 40 else RED
-        print(f"    {cat:<30} [{colour(bar_fill + bar_empty)}] {colour(f'{rate:5.1f}%')}  (Confirmed: {rec}, Pending: {pending_c}, Escalated: {esc})")
+    cat_status, cat_metrics = _get(f"{base}/api/v1/stats/by-category?batch_id={batch_id}")
+    if cat_status == 200:
+        categories = cat_metrics.get("categories", {})
+        for cat, data in sorted(categories.items()):
+            counts = data.get("counts", {})
+            rate = data.get("recovery_rate_pct", 0.0)
+            rec = counts.get("recovered", 0)
+            pending_c = data.get("pending_confirmation_count", 0)
+            esc = counts.get("escalated", 0)
+            total = rec + pending_c + esc
+            bar_fill = "█" * int(rate / 10)
+            bar_empty = "░" * (10 - int(rate / 10))
+            colour = GREEN if rate >= 70 else YELLOW if rate >= 40 else RED
+            print(f"    {cat:<30} [{colour(bar_fill + bar_empty)}] {colour(f'{rate:5.1f}%')}  (Confirmed: {rec}, Pending: {pending_c}, Escalated: {esc})")
+    else:
+        print(RED(f"Error fetching category metrics: {cat_metrics}"))
 
     print()
     print(BOLD("═" * 65))
-    print(f"  Full audit trail: {base}/api/v1/audit/")
-    print(f"  Stats summary:   {base}/api/v1/stats/summary")
-    print(f"  Swagger UI:       {base}/docs")
+    print(f"  Batch audit trail: {base}/api/v1/audit/")
+    print(f"  Batch stats:       {base}/api/v1/stats/summary?batch_id={batch_id}")
+    print(f"  All-time stats:    {base}/api/v1/stats/summary")
+    print(f"  Swagger UI:        {base}/docs")
     print(BOLD("═" * 65))
     print()
 

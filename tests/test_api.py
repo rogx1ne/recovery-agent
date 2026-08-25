@@ -272,6 +272,58 @@ class TestMetrics:
         assert r.status_code == 200
         assert "categories" in r.json()
 
+    def test_summary_and_category_scoped_by_batch_id(self, client):
+        # Create transactions with two different batch_ids
+        client.post("/api/v1/transactions/", json={
+            "razorpay_payment_id": "pay_Batch1_Tx1",
+            "amount": 10000,
+            "currency": "INR",
+            "status": "failed",
+            "failure_reason_code": "card_declined",
+            "batch_id": "test_batch_alpha",
+        })
+        client.post("/api/v1/transactions/", json={
+            "razorpay_payment_id": "pay_Batch1_Tx2",
+            "amount": 20000,
+            "currency": "INR",
+            "status": "recovered",
+            "failure_reason_code": "card_declined",
+            "batch_id": "test_batch_alpha",
+        })
+        client.post("/api/v1/transactions/", json={
+            "razorpay_payment_id": "pay_Batch2_Tx1",
+            "amount": 50000,
+            "currency": "INR",
+            "status": "failed",
+            "failure_reason_code": "network_error",
+            "batch_id": "test_batch_beta",
+        })
+
+        # Test batch_alpha scoped summary
+        r_alpha = client.get("/api/v1/stats/summary?batch_id=test_batch_alpha")
+        assert r_alpha.status_code == 200
+        alpha_body = r_alpha.json()
+        assert alpha_body["batch_id"] == "test_batch_alpha"
+        assert alpha_body["total_transactions"] == 2
+        assert alpha_body["by_status"]["recovered"] == 1
+        assert alpha_body["by_status"]["failed"] == 1
+        assert alpha_body["amount_recovered_inr"] == 200.0
+
+        # Test batch_beta scoped summary
+        r_beta = client.get("/api/v1/stats/summary?batch_id=test_batch_beta")
+        assert r_beta.status_code == 200
+        beta_body = r_beta.json()
+        assert beta_body["batch_id"] == "test_batch_beta"
+        assert beta_body["total_transactions"] == 1
+        assert beta_body["amount_recovered_inr"] == 0.0
+
+        # Test list batches endpoint
+        r_batches = client.get("/api/v1/stats/batches")
+        assert r_batches.status_code == 200
+        batch_ids = [b["batch_id"] for b in r_batches.json()]
+        assert "test_batch_alpha" in batch_ids
+        assert "test_batch_beta" in batch_ids
+
 
 # ─── Webhooks ─────────────────────────────────────────────────────────────────
 

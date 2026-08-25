@@ -11,16 +11,36 @@ function fmt(paise) {
 export function Dashboard({ setPage, setSelectedTx }) {
   const [metrics, setMetrics] = useState(null);
   const [txs, setTxs] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [selectedBatch, setSelectedBatch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function load() {
+  async function loadBatches() {
+    try {
+      const bList = await api.listBatches();
+      setBatches(bList || []);
+      // If no batch is selected yet and batches exist, optionally default to the latest batch
+      if (!selectedBatch && bList && bList.length > 0) {
+        setSelectedBatch(bList[0].batch_id);
+      }
+    } catch {
+      // Non-critical, fallback to empty list
+    }
+  }
+
+  async function loadData(batchId = selectedBatch) {
     setLoading(true);
     setError("");
     try {
-      const [m, t] = await Promise.all([api.getSummary(), api.listTransactions(50)]);
+      const [m, t, bList] = await Promise.all([
+        api.getSummary(batchId || null),
+        api.listTransactions(50, 0, batchId || null),
+        api.listBatches().catch(() => []),
+      ]);
       setMetrics(m);
       setTxs(t.items || []);
+      setBatches(bList || []);
     } catch (e) {
       setError("Could not reach the backend. Is the server running on port 8000?");
     } finally {
@@ -28,7 +48,14 @@ export function Dashboard({ setPage, setSelectedTx }) {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadData(selectedBatch);
+  }, [selectedBatch]);
+
+  function handleBatchChange(e) {
+    const val = e.target.value;
+    setSelectedBatch(val);
+  }
 
   function openTx(tx) {
     setSelectedTx(tx);
@@ -54,19 +81,39 @@ export function Dashboard({ setPage, setSelectedTx }) {
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Recovery Dashboard</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             AI-powered payment failure recovery · Razorpay Test Mode
           </p>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          <span>↻</span> Refresh
-        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Batch Selector */}
+          <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm text-sm">
+            <span className="text-gray-500 font-medium text-xs">Scope:</span>
+            <select
+              value={selectedBatch}
+              onChange={handleBatchChange}
+              className="bg-transparent text-gray-800 font-medium text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="">All Time (Cumulative)</option>
+              {batches.map((b) => (
+                <option key={b.batch_id} value={b.batch_id}>
+                  {b.batch_id} ({b.count} txs)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => loadData(selectedBatch)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <span>↻</span> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metric cards */}

@@ -58,6 +58,9 @@ class Transaction(Base):
     retry_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of recovery retries attempted"
     )
+    batch_id: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True, comment="Batch identifier to scope transactions by run"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

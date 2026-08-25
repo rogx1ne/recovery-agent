@@ -9,8 +9,8 @@
 
 > *"Don't just identify the problem. Show measured money recovered across a batch, with compliant escalation, stopping rules, and an audit trail."* — **Razorpay Track 03 Bar**
 
-<!-- Measured across a clean batch of exactly 10 transactions (DEMO_BATCH) with simulated webhook confirmations -->
-When tested across an end-to-end batch of **10 payment failure scenarios** with simulated Razorpay webhook payment confirmations:
+<!-- Measured across a single batch of 10 transactions (DEMO_BATCH) scoped via batch_id with simulated webhook confirmations -->
+*Figures below are scoped to a single 10-transaction batch via `batch_id` (not cumulative across all runs), verified with simulated Razorpay webhook payment confirmations:*
 
 | Metric | Measured Value |
 |---|---|

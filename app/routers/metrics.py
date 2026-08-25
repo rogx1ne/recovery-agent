@@ -8,9 +8,9 @@ GET   /api/v1/metrics/by-category  Recovery rate broken down by root-cause categ
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -24,18 +24,68 @@ DbDep = Annotated[Session, Depends(get_db)]
 
 
 @router.get(
+    "/batches",
+    summary="List available batch IDs",
+    description="Returns distinct batch IDs along with transaction count and latest timestamp.",
+)
+def get_batches(db: DbDep):
+    rows = (
+        db.query(
+            Transaction.batch_id,
+            func.count(Transaction.id).label("count"),
+            func.max(Transaction.created_at).label("latest_created_at"),
+        )
+        .filter(Transaction.batch_id.isnot(None))
+        .group_by(Transaction.batch_id)
+        .order_by(func.max(Transaction.created_at).desc())
+        .all()
+    )
+    return [
+        {
+            "batch_id": row.batch_id,
+            "count": row.count,
+            "latest_created_at": row.latest_created_at.isoformat() if row.latest_created_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.get(
     "/summary",
-    summary="Overall recovery summary",
+    summary="Overall or batch-scoped recovery summary",
     description=(
-        "Returns high-level batch statistics: total transactions, counts by status, "
-        "overall recovery rate (%), and total amount recovered (in smallest unit)."
+        "Returns high-level recovery statistics: total transactions, counts by status, "
+        "overall recovery rate (%), and total amount recovered. "
+        "Optionally scoped to a specific batch_id."
     ),
 )
-def get_summary(db: DbDep):
-    total = db.query(func.count(Transaction.id)).scalar() or 0
+def get_summary(
+    db: DbDep,
+    batch_id: Optional[str] = Query(
+        default=None, description="Optional batch ID to scope metrics to"
+    ),
+):
+    total_q = db.query(func.count(Transaction.id))
+    status_q = db.query(Transaction.status, func.count(Transaction.id)).group_by(Transaction.status)
+    rec_amount_q = (
+        db.query(func.sum(Transaction.amount))
+        .filter(Transaction.status == TransactionStatus.RECOVERED)
+    )
+    pending_amount_q = (
+        db.query(func.sum(Transaction.amount))
+        .filter(Transaction.status.in_([TransactionStatus.RETRY_INITIATED, TransactionStatus.LINK_SENT]))
+    )
+
+    if batch_id:
+        total_q = total_q.filter(Transaction.batch_id == batch_id)
+        status_q = status_q.filter(Transaction.batch_id == batch_id)
+        rec_amount_q = rec_amount_q.filter(Transaction.batch_id == batch_id)
+        pending_amount_q = pending_amount_q.filter(Transaction.batch_id == batch_id)
+
+    total = total_q.scalar() or 0
 
     status_counts: dict[str, int] = {}
-    for row in db.query(Transaction.status, func.count(Transaction.id)).group_by(Transaction.status).all():
+    for row in status_q.all():
         status_counts[row[0].value] = row[1]
 
     recovered_count = status_counts.get(TransactionStatus.RECOVERED.value, 0)
@@ -47,25 +97,16 @@ def get_summary(db: DbDep):
     pending_confirmation_count = retry_initiated_count + link_sent_count
 
     # Amount recovered = sum of amounts for RECOVERED transactions ONLY
-    amount_recovered = (
-        db.query(func.sum(Transaction.amount))
-        .filter(Transaction.status == TransactionStatus.RECOVERED)
-        .scalar()
-        or 0
-    )
+    amount_recovered = rec_amount_q.scalar() or 0
 
     # Amount pending confirmation = sum of amounts for RETRY_INITIATED and LINK_SENT
-    amount_pending_confirmation = (
-        db.query(func.sum(Transaction.amount))
-        .filter(Transaction.status.in_([TransactionStatus.RETRY_INITIATED, TransactionStatus.LINK_SENT]))
-        .scalar()
-        or 0
-    )
+    amount_pending_confirmation = pending_amount_q.scalar() or 0
 
     attempted = recovered_count + pending_confirmation_count + escalated_count  # transactions that went through pipeline
     recovery_rate_pct = (recovered_count / attempted * 100) if attempted > 0 else 0.0
 
     return {
+        "batch_id": batch_id,
         "total_transactions": total,
         "by_status": {
             "pending": pending_count,
@@ -90,20 +131,26 @@ def get_summary(db: DbDep):
     summary="Recovery breakdown by root-cause category",
     description=(
         "Shows recovery rate and counts per root-cause category. "
-        "Useful for identifying which failure types are hardest to recover."
+        "Optionally scoped to a specific batch_id."
     ),
 )
-def get_by_category(db: DbDep):
-    rows = (
-        db.query(
-            Transaction.root_cause_category,
-            Transaction.status,
-            func.count(Transaction.id).label("count"),
-            func.sum(Transaction.amount).label("total_amount"),
-        )
-        .group_by(Transaction.root_cause_category, Transaction.status)
-        .all()
+def get_by_category(
+    db: DbDep,
+    batch_id: Optional[str] = Query(
+        default=None, description="Optional batch ID to scope metrics to"
+    ),
+):
+    query = db.query(
+        Transaction.root_cause_category,
+        Transaction.status,
+        func.count(Transaction.id).label("count"),
+        func.sum(Transaction.amount).label("total_amount"),
     )
+
+    if batch_id:
+        query = query.filter(Transaction.batch_id == batch_id)
+
+    rows = query.group_by(Transaction.root_cause_category, Transaction.status).all()
 
     # Build a nested structure: category -> {status -> count}
     summary: dict[str, dict] = {}
@@ -129,4 +176,4 @@ def get_by_category(db: DbDep):
         attempted = recovered + pending_confirmation + escalated
         data["recovery_rate_pct"] = round((recovered / attempted * 100) if attempted > 0 else 0.0, 2)
 
-    return {"categories": summary}
+    return {"batch_id": batch_id, "categories": summary}
