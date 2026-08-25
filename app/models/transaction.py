@@ -61,6 +61,15 @@ class Transaction(Base):
     batch_id: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True, index=True, comment="Batch identifier to scope transactions by run"
     )
+    customer_contact: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, comment="Customer phone number in E.164 format"
+    )
+    customer_email: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, comment="Customer email address"
+    )
+    customer_name: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, comment="Customer full name"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

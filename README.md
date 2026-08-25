@@ -15,11 +15,11 @@
 | Metric | Measured Value |
 |---|---|
 | **Total At-Risk Revenue** | **₹8,947.00 (10 transactions)** |
-| **Confirmed Recovered (Webhook)** | **₹3,249.00 (5 transactions)** |
-| **Awaiting Confirmation (`retry_initiated` / `link_sent`)** | **₹1,999.00 (1 transaction)** |
-| **Escalated (Manual Review)** | **₹3,699.00 (4 transactions)** |
+| **Confirmed Recovered (Webhook)** | **₹5,250.00 (5 transactions)** |
+| **Awaiting Confirmation (`retry_initiated` / `link_sent`)** | **₹3,697.00 (5 transactions)** |
+| **Escalated (Manual Review)** | **₹0.00 (0 transactions)** |
 | **Confirmed Count Recovery Rate** | **50.0% (5 / 10 transactions)** |
-| **Confirmed Value Recovery Rate** | **36.3% (₹3,249.00 / ₹8,947.00)** |
+| **Confirmed Value Recovery Rate** | **58.7% (₹5,250.00 / ₹8,947.00)** |
 
 ---
 
@@ -130,6 +130,7 @@ recovery-agent/
 │   ├── package.json
 │   └── vite.config.js
 ├── scripts/
+│   ├── check_razorpay_setup.py     # Startup sanity check for Razorpay API connectivity
 │   ├── generate_batch.py           # Synthetic failed transaction batch generator
 │   ├── run_batch_recovery.py       # Batch pipeline execution runner
 │   └── demo_run.py                 # Live colorized end-to-end demo script
@@ -165,6 +166,9 @@ pip install -r requirements.txt
 
 # Configure Environment
 cp .env.example .env
+
+# Verify Razorpay API connectivity (Startup Sanity Check)
+python scripts/check_razorpay_setup.py
 ```
 
 *(Optional)* Edit `.env` to add your free **Google Gemini API Key** (`GEMINI_API_KEY=AIzaSy...`) for AI-powered classification and Hinglish messaging.

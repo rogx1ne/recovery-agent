@@ -59,11 +59,17 @@ def create_transaction(payload: TransactionCreate, db: DbDep):
         status=payload.status,
         failure_reason_code=payload.failure_reason_code,
         batch_id=payload.batch_id,
+        customer_contact=payload.customer_contact,
+        customer_email=payload.customer_email,
+        customer_name=payload.customer_name,
     )
     db.add(tx)
     db.commit()
     db.refresh(tx)
-    logger.info("Created transaction id=%d rzp_id=%s batch_id=%s", tx.id, tx.razorpay_payment_id, tx.batch_id)
+    logger.info(
+        "Created transaction id=%d rzp_id=%s batch_id=%s contact=%s",
+        tx.id, tx.razorpay_payment_id, tx.batch_id, tx.customer_contact
+    )
     return tx
 
 

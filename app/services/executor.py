@@ -336,17 +336,33 @@ def _handle_payment_link(
 ) -> tuple[TransactionStatus, str, str]:
     """
     Create a Razorpay payment link and mark as link_sent (awaiting payment confirmation).
+    If customer contact info is missing, cleanly escalate immediately.
     """
     from app.config import get_settings
     from app.services.llm_classifier import generate_recovery_message
     settings = get_settings()
 
+    if not tx.customer_contact or not tx.customer_email:
+        artefacts["payment_link_error"] = "No customer contact (phone/email) on file"
+        return (
+            TransactionStatus.ESCALATED,
+            "Cannot generate payment link — missing customer contact information. Escalating.",
+            (
+                "Cannot generate payment link — no customer contact on file. "
+                "Manual intervention required to obtain customer contact details."
+            ),
+        )
+
     try:
+        ref_id = f"rec_{tx.razorpay_payment_id}"[:40]
         link = rzp.create_payment_link(
             amount=tx.amount,
             currency=tx.currency,
-            description=f"Payment recovery for {tx.razorpay_payment_id}",
-            reference_id=f"recovery_{tx.razorpay_payment_id}",
+            description=f"Payment recovery for {tx.razorpay_payment_id}"[:255],
+            customer_contact=tx.customer_contact,
+            customer_email=tx.customer_email,
+            customer_name=tx.customer_name or "Customer",
+            reference_id=ref_id,
             expire_minutes=settings.payment_link_expire_minutes,
         )
         short_url = link.get("short_url", "N/A")
@@ -375,12 +391,13 @@ def _handle_payment_link(
             ),
         )
     except Exception as exc:
-        artefacts["payment_link_error"] = str(exc)
+        err_msg = str(exc)
+        artefacts["payment_link_error"] = err_msg
         return (
             TransactionStatus.ESCALATED,
-            f"Payment link creation failed: {exc}. Escalating.",
+            f"Payment link creation failed: {err_msg}. Escalating.",
             (
-                "Razorpay payment link API returned an error. "
+                f"Razorpay payment link API returned an error: {err_msg}. "
                 "Cannot complete automated recovery — escalating for manual intervention."
             ),
         )

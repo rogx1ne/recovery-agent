@@ -197,6 +197,9 @@ class TestRecovery:
             "currency": "INR",
             "status": "failed",
             "failure_reason_code": "insufficient_funds",
+            "customer_contact": "+919876543210",
+            "customer_email": "customer@example.com",
+            "customer_name": "Test Customer",
         })
         tx_id = create_resp.json()["id"]
 
@@ -212,6 +215,23 @@ class TestRecovery:
         body = r.json()
         assert body["final_status"] == "link_sent"
         assert body["artefacts"].get("payment_link_url") == "https://rzp.io/i/mock123"
+
+    def test_payment_link_missing_contact_escalates_cleanly(self, client):
+        create_resp = client.post("/api/v1/transactions/", json={
+            "razorpay_payment_id": "pay_RecoveryTest_NoContact",
+            "amount": 100000,
+            "currency": "INR",
+            "status": "failed",
+            "failure_reason_code": "insufficient_funds",
+            # No customer_contact or customer_email
+        })
+        tx_id = create_resp.json()["id"]
+
+        r = client.post(f"/api/v1/recovery/{tx_id}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["final_status"] == "escalated"
+        assert "no customer contact" in body["artefacts"].get("payment_link_error", "").lower()
 
 
 # ─── Audit ────────────────────────────────────────────────────────────────────

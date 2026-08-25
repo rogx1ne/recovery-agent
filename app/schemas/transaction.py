@@ -49,6 +49,24 @@ class TransactionCreate(BaseModel):
         examples=["batch_20260825_001"],
         description="Optional batch identifier to scope transactions by run",
     )
+    customer_contact: Optional[str] = Field(
+        default=None,
+        max_length=32,
+        examples=["+919876543210"],
+        description="Customer phone number in E.164 format (required for payment links)",
+    )
+    customer_email: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        examples=["customer@example.com"],
+        description="Customer email address (required for payment links)",
+    )
+    customer_name: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        examples=["Rohit Sharma"],
+        description="Customer full name",
+    )
 
 
 # ─── Response schemas ─────────────────────────────────────────────────────────
@@ -64,6 +82,9 @@ class TransactionResponse(BaseModel):
     root_cause_category: Optional[RootCauseCategory]
     retry_count: int
     batch_id: Optional[str] = None
+    customer_contact: Optional[str] = None
+    customer_email: Optional[str] = None
+    customer_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

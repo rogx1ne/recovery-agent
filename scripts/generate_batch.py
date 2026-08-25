@@ -43,6 +43,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "card_declined",
+        "customer_contact": "+919876543210",
+        "customer_email": "aarav.patel@example.com",
+        "customer_name": "Aarav Patel",
         "_label": "Card Declined (basic)",
     },
     {
@@ -51,6 +54,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "do_not_honour",
+        "customer_contact": "+919812345678",
+        "customer_email": "neha.sharma@example.com",
+        "customer_name": "Neha Sharma",
         "_label": "Card Declined (do_not_honour)",
     },
     # insufficient_fund scenarios
@@ -60,6 +66,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "insufficient_funds",
+        "customer_contact": "+919734567890",
+        "customer_email": "rohan.gupta@example.com",
+        "customer_name": "Rohan Gupta",
         "_label": "Insufficient Funds",
     },
     # gateway_technical_error scenarios
@@ -69,6 +78,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "gateway_technical_error",
+        "customer_contact": "+919623456789",
+        "customer_email": "priya.verma@example.com",
+        "customer_name": "Priya Verma",
         "_label": "Gateway Technical Error",
     },
     {
@@ -77,6 +89,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "network_error",
+        "customer_contact": "+919534567890",
+        "customer_email": "vikram.m@example.com",
+        "customer_name": "Vikram Malhotra",
         "_label": "Gateway Error (network_error)",
     },
     # authentication_failed scenarios
@@ -86,6 +101,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "authentication_failed",
+        "customer_contact": "+919423456781",
+        "customer_email": "ananya.iyer@example.com",
+        "customer_name": "Ananya Iyer",
         "_label": "Authentication Failed",
     },
     {
@@ -94,6 +112,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "invalid_otp",
+        "customer_contact": "+919312345672",
+        "customer_email": "karan.joshi@example.com",
+        "customer_name": "Karan Joshi",
         "_label": "Authentication Failed (invalid_otp)",
     },
     # unknown / edge case
@@ -103,6 +124,9 @@ TEST_CASES = [
         "currency": "INR",
         "status": "failed",
         "failure_reason_code": "some_new_undocumented_reason",
+        "customer_contact": "+919012345675",
+        "customer_email": "sneha.k@example.com",
+        "customer_name": "Sneha Kulkarni",
         "_label": "Unknown failure reason",
     },
 ]

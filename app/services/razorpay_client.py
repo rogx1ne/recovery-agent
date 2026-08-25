@@ -92,23 +92,48 @@ def capture_payment(payment_id: str, amount: int, currency: str = "INR") -> dict
         raise
 
 
-# ─── Payment link (STUB) ──────────────────────────────────────────────────────
+def _extract_razorpay_error(exc: Exception) -> str:
+    """
+    Extract full, human-readable error detail from a Razorpay SDK exception.
+    Captures class name, code, description, and reason.
+    """
+    err_type = type(exc).__name__
+    err_msg = str(exc).strip()
+
+    # Check if there's structured data in args
+    if hasattr(exc, "args") and exc.args and isinstance(exc.args[0], dict):
+        d = exc.args[0]
+        code = d.get("code") or d.get("error", {}).get("code", "")
+        desc = d.get("description") or d.get("error", {}).get("description", "")
+        reason = d.get("reason") or d.get("error", {}).get("reason", "")
+        field = d.get("field") or d.get("error", {}).get("field", "")
+        parts = [str(p) for p in [code, desc, field, reason] if p]
+        if parts:
+            return f"[{err_type}] {' | '.join(parts)}"
+
+    if err_msg:
+        return f"[{err_type}] {err_msg}"
+
+    return f"[{err_type}] Unknown error"
+
+
+# ─── Payment link ─────────────────────────────────────────────────────────────
 
 def create_payment_link(
     amount: int,
     currency: str,
     description: str,
+    customer_contact: str,
+    customer_email: str,
     customer_name: str = "Customer",
-    customer_email: str = "customer@example.com",
-    customer_contact: str = "+919999999999",
     reference_id: str | None = None,
     expire_minutes: int | None = None,
 ) -> dict[str, Any]:
     """
     Create a Razorpay Payment Link and return the link object.
 
-    This calls the LIVE Razorpay Payment Links API even in test mode —
-    the link will appear in the test-mode dashboard.
+    customer_contact and customer_email are required parameters. If either is missing,
+    callers must not attempt link creation and must escalate cleanly.
 
     Docs: https://razorpay.com/docs/api/payment-links/
 
@@ -119,6 +144,8 @@ def create_payment_link(
             "status": "created",
         }
     """
+    if not customer_contact or not customer_email:
+        raise ValueError("Both customer_contact and customer_email are required to create a payment link.")
     settings_ = get_settings()
     expire_by = None
     if expire_minutes is not None:
@@ -153,8 +180,9 @@ def create_payment_link(
         logger.info("Payment link created: %s", result.get("id"))
         return result
     except Exception as exc:
-        logger.error("Failed to create payment link: %s", exc)
-        raise
+        err_detail = _extract_razorpay_error(exc)
+        logger.error("Failed to create payment link: %s", err_detail)
+        raise RuntimeError(f"Razorpay payment link creation failed: {err_detail}") from exc
 
 
 # ─── Re-attempt payment (STUB) ────────────────────────────────────────────────
@@ -190,5 +218,6 @@ def create_order_for_retry(
         logger.info("Retry order created: %s", result.get("id"))
         return result
     except Exception as exc:
-        logger.error("Failed to create retry order: %s", exc)
-        raise
+        err_detail = _extract_razorpay_error(exc)
+        logger.error("Failed to create retry order: %s", err_detail)
+        raise RuntimeError(f"Razorpay retry order creation failed: {err_detail}") from exc
