@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import audit, metrics, recovery, transactions, webhooks
+from app.routers import audit, demo, metrics, recovery, transactions, webhooks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +74,7 @@ app.include_router(audit.router, prefix=API_PREFIX)
 # NOTE: mounted as /stats (not /metrics) — ad blockers block URLs containing "metrics"
 app.include_router(metrics.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
+app.include_router(demo.router, prefix=API_PREFIX)
 
 
 # ─── Root ─────────────────────────────────────────────────────────────────────

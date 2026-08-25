@@ -178,14 +178,24 @@ def _handle_payment_link_paid(payload: dict, db: Session) -> dict:
     reference_id = link.get("reference_id", "")     # 'recovery_pay_XXXXX'
     paid_amount = link.get("amount_paid", 0)
 
-    # Extract original payment ID from reference_id
-    original_payment_id = reference_id.replace("recovery_", "", 1) if reference_id else ""
+    # Extract original payment ID from reference_id (supports recovery_ and rec_ prefixes)
+    original_payment_id = ""
+    if reference_id:
+        if reference_id.startswith("recovery_"):
+            original_payment_id = reference_id[len("recovery_"):]
+        elif reference_id.startswith("rec_"):
+            original_payment_id = reference_id[len("rec_"):]
+        else:
+            original_payment_id = reference_id
 
     tx = None
     if original_payment_id:
         tx = (
             db.query(Transaction)
-            .filter(Transaction.razorpay_payment_id == original_payment_id)
+            .filter(
+                (Transaction.razorpay_payment_id == original_payment_id)
+                | (Transaction.razorpay_payment_id.startswith(original_payment_id))
+            )
             .first()
         )
 

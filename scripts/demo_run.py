@@ -27,7 +27,14 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from pathlib import Path
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.services.demo_seed import DEMO_BATCH_CASES, generate_batch_id
 
 
 # ─── Colour helpers (ANSI, gracefully degraded on Windows) ───────────────────
@@ -40,66 +47,6 @@ YELLOW = lambda t: _c("33;1", t)
 CYAN   = lambda t: _c("36;1", t)
 BOLD   = lambda t: _c("1", t)
 DIM    = lambda t: _c("2", t)
-
-
-# ─── Diverse test batch (covers all 5 categories) ────────────────────────────
-DEMO_BATCH = [
-    # card_declined — retry once then payment link
-    {"razorpay_payment_id": "pay_Demo_CardDecline_001", "amount": 50000,
-     "status": "failed", "failure_reason_code": "card_declined",
-     "customer_contact": "+919876543210", "customer_email": "aarav.patel@example.com", "customer_name": "Aarav Patel",
-     "_label": "Card Declined", "_category": "card_declined"},
-
-    {"razorpay_payment_id": "pay_Demo_CardDecline_002", "amount": 120000,
-     "status": "failed", "failure_reason_code": "do_not_honour",
-     "customer_contact": "+919812345678", "customer_email": "neha.sharma@example.com", "customer_name": "Neha Sharma",
-     "_label": "Card Declined (do_not_honour)", "_category": "card_declined"},
-
-    # insufficient_fund — payment link only, no retry
-    {"razorpay_payment_id": "pay_Demo_InsufficientFund_001", "amount": 250000,
-     "status": "failed", "failure_reason_code": "insufficient_funds",
-     "customer_contact": "+919734567890", "customer_email": "rohan.gupta@example.com", "customer_name": "Rohan Gupta",
-     "_label": "Insufficient Funds", "_category": "insufficient_fund"},
-
-    # gateway_technical_error — immediate retry up to 2x
-    {"razorpay_payment_id": "pay_Demo_GatewayErr_001", "amount": 75000,
-     "status": "failed", "failure_reason_code": "gateway_technical_error",
-     "customer_contact": "+919623456789", "customer_email": "priya.verma@example.com", "customer_name": "Priya Verma",
-     "_label": "Gateway Error", "_category": "gateway_technical_error"},
-
-    {"razorpay_payment_id": "pay_Demo_GatewayErr_002", "amount": 30000,
-     "status": "failed", "failure_reason_code": "network_error",
-     "customer_contact": "+919534567890", "customer_email": "vikram.m@example.com", "customer_name": "Vikram Malhotra",
-     "_label": "Network Error", "_category": "gateway_technical_error"},
-
-    # authentication_failed — payment link with instructions
-    {"razorpay_payment_id": "pay_Demo_AuthFail_001", "amount": 99900,
-     "status": "failed", "failure_reason_code": "authentication_failed",
-     "customer_contact": "+919423456781", "customer_email": "ananya.iyer@example.com", "customer_name": "Ananya Iyer",
-     "_label": "Auth Failed (3DS)", "_category": "authentication_failed"},
-
-    {"razorpay_payment_id": "pay_Demo_AuthFail_002", "amount": 15000,
-     "status": "failed", "failure_reason_code": "invalid_otp",
-     "customer_contact": "+919312345672", "customer_email": "karan.joshi@example.com", "customer_name": "Karan Joshi",
-     "_label": "Auth Failed (OTP)", "_category": "authentication_failed"},
-
-    # subscription_failed — retry mandate
-    {"razorpay_payment_id": "pay_Demo_SubFail_001", "amount": 49900,
-     "status": "failed", "failure_reason_code": "mandate_failed",
-     "customer_contact": "+919234567813", "customer_email": "divya.nair@example.com", "customer_name": "Divya Nair",
-     "_label": "Mandate Failed", "_category": "subscription_failed"},
-
-    {"razorpay_payment_id": "pay_Demo_SubFail_002", "amount": 199900,
-     "status": "failed", "failure_reason_code": "recurring_charge_failed",
-     "customer_contact": "+919123456784", "customer_email": "aditya.rao@example.com", "customer_name": "Aditya Rao",
-     "_label": "Recurring Charge Failed", "_category": "subscription_failed"},
-
-    # unknown
-    {"razorpay_payment_id": "pay_Demo_Unknown_001", "amount": 5000,
-     "status": "failed", "failure_reason_code": "undocumented_issuer_code_42",
-     "customer_contact": "+919012345675", "customer_email": "sneha.k@example.com", "customer_name": "Sneha Kulkarni",
-     "_label": "Unknown Error", "_category": "unknown"},
-]
 
 
 # ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -134,8 +81,8 @@ def main():
     base = args.api_url.rstrip("/")
 
     # Unique suffix to avoid conflicts on re-runs
-    ts = datetime.now(timezone.utc).strftime("%H%M%S")
-    batch_id = f"batch_{ts}"
+    batch_id = generate_batch_id()
+    suffix = batch_id.replace("batch_", "")
 
     print()
     print(BOLD("═" * 65))
@@ -145,19 +92,27 @@ def main():
     print(BOLD("═" * 65))
 
     # ── PHASE 1: Create failed transactions ────────────────────────────────
-    print(f"\n{CYAN('PHASE 1')} — Registering {len(DEMO_BATCH)} failed transactions (batch: {batch_id})\n")
+    print(f"\n{CYAN('PHASE 1')} — Registering {len(DEMO_BATCH_CASES)} failed transactions (batch: {batch_id})\n")
 
     total_at_risk = 0
     created: list[dict] = []
 
-    for i, case in enumerate(DEMO_BATCH, 1):
-        label = case.pop("_label")
-        category = case.pop("_category")
-        case["razorpay_payment_id"] += f"_{ts}"
-        case["currency"] = "INR"
-        case["batch_id"] = batch_id
+    for i, case in enumerate(DEMO_BATCH_CASES, 1):
+        label = case["label"]
+        category = case["category"]
+        payload = {
+            "razorpay_payment_id": f"{case['base_payment_id']}_{suffix}",
+            "amount": case["amount"],
+            "currency": "INR",
+            "status": "failed",
+            "failure_reason_code": case["failure_reason_code"],
+            "batch_id": batch_id,
+            "customer_contact": case["customer_contact"],
+            "customer_email": case["customer_email"],
+            "customer_name": case["customer_name"],
+        }
 
-        status_code, resp = _post(f"{base}/api/v1/transactions/", case)
+        status_code, resp = _post(f"{base}/api/v1/transactions/", payload)
 
         if status_code == 201:
             tx_id = resp["id"]
@@ -167,7 +122,7 @@ def main():
                 "id": tx_id,
                 "label": label,
                 "amount": case["amount"],
-                "payment_id": case["razorpay_payment_id"],
+                "payment_id": payload["razorpay_payment_id"],
                 "category": category,
             })
             print(f"  {GREEN('✓')} [{i:02d}] tx_id={tx_id:3d}  ₹{amount_inr:8,.2f}  {label}")

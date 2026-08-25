@@ -397,5 +397,56 @@ class TestWebhooks:
             content=b"not json",
             headers={"Content-Type": "application/json"},
         )
-        # FastAPI itself returns 422 for body parse failures when using async
         assert r.status_code in (400, 422)
+
+
+# ─── Demo Batch ───────────────────────────────────────────────────────────────
+
+class TestDemoRouter:
+    """Tests for the interactive frontend demo runner endpoints."""
+
+    def test_run_demo_batch_initiates_task(self, client):
+        r = client.post("/api/v1/demo/run-batch")
+        assert r.status_code == 202
+        body = r.json()
+        assert "batch_id" in body
+        assert body["status"] == "running"
+        assert body["total"] == 10
+
+    def test_get_demo_status_returns_progress(self, client):
+        batch_id = "test_demo_status_batch"
+        # Status for non-existent or fresh batch
+        r = client.get(f"/api/v1/demo/status/{batch_id}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["batch_id"] == batch_id
+        assert body["total"] == 10
+        assert "completed" in body
+        assert "percent" in body
+
+    def test_demo_seed_creation_and_execution(self, client):
+        from app.models.transaction import TransactionStatus
+        from app.services.demo_seed import (
+            DEMO_BATCH_CASES,
+            create_demo_transactions,
+            simulate_demo_webhooks,
+        )
+        db = TestingSessionLocal()
+        try:
+            batch_id = "test_seed_batch_001"
+            txs = create_demo_transactions(db, batch_id)
+            assert len(txs) == len(DEMO_BATCH_CASES)
+            assert all(tx.batch_id == batch_id for tx in txs)
+            assert all(tx.customer_contact is not None for tx in txs)
+
+            # Test webhook simulation
+            mock_results = [
+                {"id": txs[0].id, "final_status": "retry_initiated"},
+                {"id": txs[1].id, "final_status": "link_sent"},
+            ]
+            confirmed = simulate_demo_webhooks(db, mock_results)
+            assert confirmed == 2
+            assert txs[0].status == TransactionStatus.RECOVERED
+            assert txs[1].status == TransactionStatus.RECOVERED
+        finally:
+            db.close()

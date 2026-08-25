@@ -34,11 +34,15 @@ export const api = {
   getAuditTrail: (txId) => request("GET", `/audit/transaction/${txId}`),
   listAuditLogs: (limit = 20) => request("GET", `/audit/?limit=${limit}`),
 
-  // Stats (renamed from /metrics to avoid ad blocker blocks)
+  // Stats (renamed from /stats to avoid ad blocker blocks)
   listBatches: () => request("GET", `/stats/batches`),
   getSummary: (batchId = null) =>
     request("GET", `/stats/summary${batchId ? `?batch_id=${encodeURIComponent(batchId)}` : ""}`),
   getByCategory: (batchId = null) =>
     request("GET", `/stats/by-category${batchId ? `?batch_id=${encodeURIComponent(batchId)}` : ""}`),
+
+  // Demo Runner
+  runDemoBatch: () => request("POST", `/demo/run-batch`, {}),
+  getDemoStatus: (batchId) => request("GET", `/demo/status/${encodeURIComponent(batchId)}`),
 };
 

@@ -16,18 +16,10 @@ export function Dashboard({ setPage, setSelectedTx }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadBatches() {
-    try {
-      const bList = await api.listBatches();
-      setBatches(bList || []);
-      // If no batch is selected yet and batches exist, optionally default to the latest batch
-      if (!selectedBatch && bList && bList.length > 0) {
-        setSelectedBatch(bList[0].batch_id);
-      }
-    } catch {
-      // Non-critical, fallback to empty list
-    }
-  }
+  // Demo Runner state
+  const [isDemoRunning, setIsDemoRunning] = useState(false);
+  const [demoProgress, setDemoProgress] = useState(null);
+  const [demoBanner, setDemoBanner] = useState("");
 
   async function loadData(batchId = selectedBatch) {
     setLoading(true);
@@ -51,6 +43,40 @@ export function Dashboard({ setPage, setSelectedTx }) {
   useEffect(() => {
     loadData(selectedBatch);
   }, [selectedBatch]);
+
+  async function handleRunDemo() {
+    if (isDemoRunning) return;
+    setIsDemoRunning(true);
+    setDemoBanner("");
+    setDemoProgress({ completed: 0, total: 10, percent: 0, status: "running" });
+
+    try {
+      const initResp = await api.runDemoBatch();
+      const batchId = initResp.batch_id;
+
+      // Poll every 2 seconds
+      const pollTimer = setInterval(async () => {
+        try {
+          const statusResp = await api.getDemoStatus(batchId);
+          setDemoProgress(statusResp);
+
+          if (statusResp.status === "completed" || statusResp.completed >= statusResp.total) {
+            clearInterval(pollTimer);
+            setIsDemoRunning(false);
+            setDemoBanner(`✓ Demo batch ${batchId} completed successfully! Displaying results below.`);
+            setSelectedBatch(batchId);
+            await loadData(batchId);
+          }
+        } catch {
+          // If polling fails once, keep trying
+        }
+      }, 2000);
+    } catch (err) {
+      setIsDemoRunning(false);
+      setDemoProgress(null);
+      setError(`Failed to trigger demo batch: ${err.message}`);
+    }
+  }
 
   function handleBatchChange(e) {
     const val = e.target.value;
@@ -78,7 +104,7 @@ export function Dashboard({ setPage, setSelectedTx }) {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -89,7 +115,33 @@ export function Dashboard({ setPage, setSelectedTx }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Run Demo Batch Button */}
+          <button
+            onClick={handleRunDemo}
+            disabled={isDemoRunning}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all ${
+              isDemoRunning
+                ? "bg-purple-100 text-purple-700 cursor-not-allowed border border-purple-300"
+                : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+            }`}
+          >
+            {isDemoRunning ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span>Running Demo Batch…</span>
+              </>
+            ) : (
+              <>
+                <span>🚀</span>
+                <span>Run Demo Batch</span>
+              </>
+            )}
+          </button>
+
           {/* Batch Selector */}
           <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm text-sm">
             <span className="text-gray-500 font-medium text-xs">Scope:</span>
@@ -109,11 +161,123 @@ export function Dashboard({ setPage, setSelectedTx }) {
 
           <button
             onClick={() => loadData(selectedBatch)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+            disabled={isDemoRunning}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-medium transition-colors shadow-sm"
           >
             <span>↻</span> Refresh
           </button>
         </div>
+      </div>
+
+      {/* Demo Explanatory Note & Live Progress Banner */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-900 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <span className="text-base mt-0.5">ℹ️</span>
+            <div>
+              <p className="font-semibold text-indigo-950">Interactive Demo Runner for Evaluators</p>
+              <p className="text-indigo-800 mt-0.5 leading-relaxed">
+                Creates 10 synthetic failed transactions across all root-cause categories, runs the live recovery pipeline against Razorpay test-mode APIs, and simulates payment confirmation via webhook. Takes about a minute.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Progress Bar & Action Stream when running */}
+        {isDemoRunning && demoProgress && (
+          <div className="mt-4 pt-3 border-t border-indigo-200/60 space-y-3">
+            <div className="flex items-center justify-between text-xs font-semibold text-indigo-900">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-200 text-indigo-950">
+                  {demoProgress.phase || "Processing"}
+                </span>
+                <span>{demoProgress.completed} / {demoProgress.total} processed</span>
+              </div>
+              <span className="font-mono">{demoProgress.percent}%</span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-indigo-200/80 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${Math.max(demoProgress.percent, 8)}%` }}
+              ></div>
+            </div>
+
+            {/* Current Active Step */}
+            {demoProgress.current_action && (
+              <div className="bg-white/80 border border-indigo-200 rounded-lg px-3 py-2 text-xs flex items-center gap-2">
+                <span className="animate-pulse flex h-2 w-2 rounded-full bg-indigo-600"></span>
+                <span className="font-medium text-indigo-950 truncate">
+                  {demoProgress.current_action}
+                </span>
+              </div>
+            )}
+
+            {/* Live Activity Stream Console */}
+            {demoProgress.logs && demoProgress.logs.length > 0 && (
+              <div className="bg-gray-900 text-gray-200 rounded-lg p-3 font-mono text-[11px] max-h-48 overflow-y-auto shadow-inner space-y-1.5 flex flex-col-reverse">
+                {[...demoProgress.logs].reverse().map((log, idx) => (
+                  <div key={idx} className="flex items-start gap-2 leading-relaxed">
+                    <span className="text-gray-500 shrink-0 select-none">[{log.time}]</span>
+                    <span className="shrink-0">
+                      {log.type === "classify" && "🤖"}
+                      {log.type === "order" && "💳"}
+                      {log.type === "link" && "🔗"}
+                      {log.type === "webhook" && "✓"}
+                      {log.type === "escalate" && "🛡"}
+                      {log.type === "error" && "⚠"}
+                      {log.type === "init" && "📦"}
+                      {log.type === "done" && "🏁"}
+                    </span>
+                    <span className={
+                      log.type === "webhook" || log.type === "done"
+                        ? "text-emerald-400 font-semibold"
+                        : log.type === "order" || log.type === "link"
+                        ? "text-cyan-300"
+                        : log.type === "escalate"
+                        ? "text-amber-300"
+                        : log.type === "error"
+                        ? "text-rose-400"
+                        : "text-gray-200"
+                    }>
+                      {log.message}
+                      {log.detail && (
+                        <span className="text-indigo-300 ml-1.5 opacity-80 text-[10px]">
+                          ({log.detail})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Completion Banner with Log summary preview */}
+        {demoBanner && !isDemoRunning && (
+          <div className="mt-3 pt-2.5 border-t border-indigo-200/60 font-medium text-emerald-800 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <span>{demoBanner}</span>
+            </div>
+            {demoProgress?.logs && demoProgress.logs.length > 0 && (
+              <details className="text-[11px] text-gray-600 font-normal cursor-pointer">
+                <summary className="font-medium text-indigo-700 hover:text-indigo-900">
+                  View Full Live Execution Log ({demoProgress.logs.length} events)
+                </summary>
+                <div className="bg-gray-900 text-gray-200 rounded-lg p-3 font-mono mt-2 max-h-48 overflow-y-auto shadow-inner space-y-1.5">
+                  {demoProgress.logs.map((log, idx) => (
+                    <div key={idx} className="flex items-start gap-2 leading-relaxed">
+                      <span className="text-gray-500 shrink-0">[{log.time}]</span>
+                      <span>{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Metric cards */}
