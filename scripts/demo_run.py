@@ -267,38 +267,50 @@ def main():
     print(BOLD("  📊  BATCH RESULTS SUMMARY"))
     print(BOLD("═" * 65))
 
-    status_code, stats = _get(f"{base}/api/v1/stats/summary")
-    if status_code == 200:
-        by_status = stats.get("by_status", {})
-        rec_count = by_status.get("recovered", 0)
-        pending_conf_count = by_status.get("pending_confirmation", 0)
-        esc_count = by_status.get("escalated", 0)
-        total_tx = stats.get("total_transactions", 0)
+    total_batch_count = len(results)
+    rec_count = sum(1 for r in results if r["final_status"] == "recovered")
+    pending_conf_count = sum(1 for r in results if r["final_status"] in ("retry_initiated", "link_sent"))
+    esc_count = sum(1 for r in results if r["final_status"] == "escalated")
 
-        amt_rec_inr = stats.get("amount_recovered_inr", 0.0)
-        amt_pending_inr = stats.get("amount_pending_confirmation_inr", 0.0)
-        rate_pct = stats.get("recovery_rate_pct", 0.0)
+    amt_rec_paise = sum(r["amount"] for r in results if r["final_status"] == "recovered")
+    amt_pending_paise = sum(r["amount"] for r in results if r["final_status"] in ("retry_initiated", "link_sent"))
+    amt_esc_paise = sum(r["amount"] for r in results if r["final_status"] == "escalated")
 
-        print(f"\n  Total transactions            : {BOLD(str(total_tx))}")
-        print(f"  Total at-risk                 : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
-        print(f"  Confirmed Recovered (Webhook) : {GREEN(f'₹{amt_rec_inr:>10,.2f}')}  ({rec_count} transactions)")
-        print(f"  Awaiting Confirmation        : {CYAN(f'₹{amt_pending_inr:>10,.2f}')}  ({pending_conf_count} transactions)")
-        print(f"  Escalated (Manual Review)    : {YELLOW(f'₹{(total_at_risk/100 - amt_rec_inr - amt_pending_inr):>10,.2f}')}  ({esc_count} transactions)")
-        print(f"\n  {'Recovery Rate (Confirmed)':<30}: {GREEN(f'{rate_pct:.1f}%')}")
-    else:
-        print(RED(f"Error fetching stats: {stats}"))
+    amt_rec_inr = amt_rec_paise / 100
+    amt_pending_inr = amt_pending_paise / 100
+    amt_esc_inr = amt_esc_paise / 100
+
+    rate_pct = (rec_count / total_batch_count * 100) if total_batch_count > 0 else 0.0
+    value_rate_pct = (amt_rec_paise / total_at_risk * 100) if total_at_risk > 0 else 0.0
+
+    print(f"\n  Total transactions            : {BOLD(str(total_batch_count))}")
+    print(f"  Total at-risk                 : {RED(f'₹{total_at_risk/100:>10,.2f}')}")
+    print(f"  Confirmed Recovered (Webhook) : {GREEN(f'₹{amt_rec_inr:>10,.2f}')}  ({rec_count} transactions)")
+    print(f"  Awaiting Confirmation        : {CYAN(f'₹{amt_pending_inr:>10,.2f}')}  ({pending_conf_count} transactions)")
+    print(f"  Escalated (Manual Review)    : {YELLOW(f'₹{amt_esc_inr:>10,.2f}')}  ({esc_count} transactions)")
+    print(f"\n  {'Recovery Rate (Confirmed)':<30}: {GREEN(f'{rate_pct:.1f}%')} (count) | {GREEN(f'{value_rate_pct:.1f}%')} (value)")
 
     # ── Category breakdown ─────────────────────────────────────────────────
     print(f"\n  {BOLD('By category:')}")
-    _, cat_metrics = _get(f"{base}/api/v1/stats/by-category")
-    categories = cat_metrics.get("categories", {})
-    for cat, data in sorted(categories.items()):
-        counts = data.get("counts", {})
-        rate = data.get("recovery_rate_pct", 0)
-        rec = counts.get("recovered", 0)
-        pending_c = data.get("pending_confirmation_count", 0)
-        esc = counts.get("escalated", 0)
-        total = rec + pending_c + esc
+    cat_summary = {}
+    for r in results:
+        cat = r["category"]
+        if cat not in cat_summary:
+            cat_summary[cat] = {"recovered": 0, "pending": 0, "escalated": 0, "total": 0}
+        cat_summary[cat]["total"] += 1
+        if r["final_status"] == "recovered":
+            cat_summary[cat]["recovered"] += 1
+        elif r["final_status"] in ("retry_initiated", "link_sent"):
+            cat_summary[cat]["pending"] += 1
+        else:
+            cat_summary[cat]["escalated"] += 1
+
+    for cat, data in sorted(cat_summary.items()):
+        rec = data["recovered"]
+        pending_c = data["pending"]
+        esc = data["escalated"]
+        total = data["total"]
+        rate = (rec / total * 100) if total > 0 else 0.0
         bar_fill = "█" * int(rate / 10)
         bar_empty = "░" * (10 - int(rate / 10))
         colour = GREEN if rate >= 70 else YELLOW if rate >= 40 else RED
