@@ -1,0 +1,48 @@
+# Environment & Secrets (NEVER COMMIT KEYS)
+.env
+.env.local
+.env.*.local
+
+# Database files (Local SQLite)
+*.db
+*.sqlite
+*.sqlite3
+recovery_agent.db
+test_recovery_agent.db
+
+# Python & Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node.js & Frontend Build Artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+dist/
+build/
+
+# Logs & Temporary Files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/tmp/
+
+# IDEs & System files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
