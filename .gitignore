@@ -49,3 +49,6 @@ Thumbs.db
 *.db-shm
 *.db-wal
 *.db-journal
+*.db-shm
+*.db-wal
+*.db-journal
