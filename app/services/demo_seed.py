@@ -6,7 +6,7 @@ Used by both:
   - app/routers/demo.py (Frontend "Run Demo Batch" button / API)
 
 Maintains single source of truth for the 10 demo transactions,
-recovery execution, webhook simulation, and live progress state.
+recovery execution, real webhook handler dispatch, and live progress state.
 """
 
 import logging
@@ -17,7 +17,6 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.transaction import Transaction, TransactionStatus
-from app.models.audit_log import AuditLog, AuditStep
 from app.services.executor import run_recovery
 
 logger = logging.getLogger(__name__)
@@ -330,16 +329,23 @@ def execute_demo_pipeline(db: Session, transactions: list[Transaction]) -> list[
     return results
 
 
-def simulate_demo_webhooks(db: Session, results: list[dict]) -> int:
+def simulate_demo_webhooks(db: Session, results: list[dict]) -> tuple[int, int]:
     """
-    Simulate payment confirmation webhooks for up to 5 non-escalated transactions.
+    Simulate payment confirmation webhooks for up to 5 non-escalated transactions
+    by directly exercising the authoritative Razorpay webhook handlers.
+
+    Returns:
+        tuple[int, int]: (confirmed_count, recovered_amount_paise)
     """
+    from app.routers.webhooks import _handle_payment_captured, _handle_payment_link_paid
+
     candidates = [
         r for r in results
         if r.get("final_status") in ("retry_initiated", "link_sent")
     ][:5]
 
     confirmed = 0
+    recovered_amount_paise = 0
     batch_id = ""
 
     for item in candidates:
@@ -347,38 +353,65 @@ def simulate_demo_webhooks(db: Session, results: list[dict]) -> int:
         if not tx:
             continue
         batch_id = tx.batch_id or batch_id
+        artefacts = item.get("artefacts", {})
 
         if batch_id in _DEMO_BATCH_STATUS:
             _DEMO_BATCH_STATUS[batch_id]["phase"] = "Phase 3/3: Razorpay Webhook Simulation"
             _DEMO_BATCH_STATUS[batch_id]["current_action"] = (
-                f"Simulating authoritative Razorpay webhook payment capture for Tx #{tx.id} ({tx.customer_name})..."
+                f"Processing webhook for Tx #{tx.id} ({tx.customer_name}) via Razorpay webhook pipeline..."
             )
 
-        tx.status = TransactionStatus.RECOVERED
-        db.add(
-            AuditLog(
-                transaction_id=tx.id,
-                step=AuditStep.OUTCOME,
-                detail=f"Simulated webhook confirmed payment for {tx.razorpay_payment_id}.",
-                reasoning=(
-                    f"Authoritative Razorpay webhook confirmation received. "
-                    f"Amount recovered: ₹{tx.amount / 100:.2f}. Marked as recovered."
-                ),
-            )
-        )
-        confirmed += 1
+        if item.get("final_status") == "link_sent":
+            link_id = artefacts.get("payment_link_id", f"plink_sim_{tx.id}")
+            payload = {
+                "event": "payment_link.paid",
+                "payload": {
+                    "payment_link": {
+                        "entity": {
+                            "id": link_id,
+                            "reference_id": f"rec_{tx.razorpay_payment_id}"[:40],
+                            "amount_paid": tx.amount,
+                        }
+                    }
+                },
+            }
+            wb_resp = _handle_payment_link_paid(payload, db)
+        else:
+            payload = {
+                "event": "payment.captured",
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "id": f"pay_captured_{tx.id}",
+                            "notes": {"original_payment_id": tx.razorpay_payment_id},
+                        }
+                    }
+                },
+            }
+            wb_resp = _handle_payment_captured(payload, db)
 
-        if batch_id in _DEMO_BATCH_STATUS:
-            _append_log(
-                batch_id,
-                "webhook",
-                f"✓ Webhook received for Tx #{tx.id} ({tx.customer_name}) — ₹{tx.amount / 100:,.2f} confirmed RECOVERED",
-            )
+        if wb_resp.get("action") in ("marked_recovered", "already_recovered"):
+            confirmed += 1
+            recovered_amount_paise += tx.amount
+            if batch_id in _DEMO_BATCH_STATUS:
+                _append_log(
+                    batch_id,
+                    "webhook",
+                    f"✓ Webhook confirmed payment for {tx.razorpay_payment_id} (₹{tx.amount / 100:,.2f}) → Marked RECOVERED",
+                )
+        else:
+            logger.warning("Webhook simulation unconfirmed for tx %d: %s", tx.id, wb_resp)
+            if batch_id in _DEMO_BATCH_STATUS:
+                _append_log(
+                    batch_id,
+                    "error",
+                    f"⚠ Webhook simulation unconfirmed for Tx #{tx.id}: {wb_resp.get('action')}",
+                )
+
         time.sleep(0.15)
 
-    db.commit()
-    logger.info("Simulated webhook confirmation for %d transactions", confirmed)
-    return confirmed
+    logger.info("Simulated webhook confirmation for %d transactions (₹%s)", confirmed, recovered_amount_paise / 100)
+    return confirmed, recovered_amount_paise
 
 
 def execute_full_demo_batch(db: Session, batch_id: str) -> dict:
@@ -387,27 +420,50 @@ def execute_full_demo_batch(db: Session, batch_id: str) -> dict:
       1. Create 10 transactions
       2. Run recovery pipeline
       3. Simulate webhook payment confirmation
+
+    All statistics (amounts, percentages) are dynamically computed from live batch results.
+    Any failure writes a terminal 'failed' state to _DEMO_BATCH_STATUS so frontend never hangs.
     """
-    txs = create_demo_transactions(db, batch_id)
-    results = execute_demo_pipeline(db, txs)
-    confirmed_count = simulate_demo_webhooks(db, results)
+    try:
+        txs = create_demo_transactions(db, batch_id)
+        results = execute_demo_pipeline(db, txs)
+        confirmed_count, recovered_amount_paise = simulate_demo_webhooks(db, results)
 
-    if batch_id in _DEMO_BATCH_STATUS:
-        _DEMO_BATCH_STATUS[batch_id]["status"] = "completed"
-        _DEMO_BATCH_STATUS[batch_id]["percent"] = 100
-        _DEMO_BATCH_STATUS[batch_id]["completed"] = len(txs)
-        _DEMO_BATCH_STATUS[batch_id]["phase"] = "Completed"
-        _DEMO_BATCH_STATUS[batch_id]["current_action"] = (
-            f"✓ Demo completed! {confirmed_count} transactions confirmed recovered (₹5,250.00), {len(txs) - confirmed_count} awaiting confirmation."
+        total_amount_paise = sum(tx.amount for tx in txs)
+        recovery_rate_pct = (
+            (recovered_amount_paise / total_amount_paise * 100)
+            if total_amount_paise > 0 else 0.0
         )
-        _append_log(
-            batch_id,
-            "done",
-            f"Demo batch {batch_id} complete: {confirmed_count}/10 payments confirmed recovered (58.7% value recovery rate).",
-        )
+        recovered_amt_str = f"₹{recovered_amount_paise / 100:,.2f}"
 
-    return {
-        "batch_id": batch_id,
-        "total_created": len(txs),
-        "confirmed_recovered": confirmed_count,
-    }
+        if batch_id in _DEMO_BATCH_STATUS:
+            _DEMO_BATCH_STATUS[batch_id]["status"] = "completed"
+            _DEMO_BATCH_STATUS[batch_id]["percent"] = 100
+            _DEMO_BATCH_STATUS[batch_id]["completed"] = len(txs)
+            _DEMO_BATCH_STATUS[batch_id]["phase"] = "Completed"
+            _DEMO_BATCH_STATUS[batch_id]["current_action"] = (
+                f"✓ Demo completed! {confirmed_count} transactions confirmed recovered ({recovered_amt_str}), "
+                f"{len(txs) - confirmed_count} awaiting confirmation."
+            )
+            _append_log(
+                batch_id,
+                "done",
+                f"Demo batch {batch_id} complete: {confirmed_count}/{len(txs)} payments confirmed recovered "
+                f"({recovered_amt_str}, {recovery_rate_pct:.1f}% value recovery rate).",
+            )
+
+        return {
+            "batch_id": batch_id,
+            "total_created": len(txs),
+            "confirmed_recovered": confirmed_count,
+            "amount_recovered_paise": recovered_amount_paise,
+            "recovery_rate_pct": recovery_rate_pct,
+        }
+    except Exception as exc:
+        logger.exception("Fatal error executing full demo batch %s: %s", batch_id, exc)
+        if batch_id in _DEMO_BATCH_STATUS:
+            _DEMO_BATCH_STATUS[batch_id]["status"] = "failed"
+            _DEMO_BATCH_STATUS[batch_id]["phase"] = "Failed"
+            _DEMO_BATCH_STATUS[batch_id]["current_action"] = f"Demo batch execution failed: {exc}"
+            _append_log(batch_id, "error", f"Fatal batch error: {exc}")
+        raise

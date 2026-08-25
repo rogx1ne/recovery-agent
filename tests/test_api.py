@@ -439,13 +439,14 @@ class TestDemoRouter:
             assert all(tx.batch_id == batch_id for tx in txs)
             assert all(tx.customer_contact is not None for tx in txs)
 
-            # Test webhook simulation
+            # Test webhook simulation via authoritative webhook handlers
             mock_results = [
-                {"id": txs[0].id, "final_status": "retry_initiated"},
-                {"id": txs[1].id, "final_status": "link_sent"},
+                {"id": txs[0].id, "final_status": "retry_initiated", "artefacts": {}},
+                {"id": txs[1].id, "final_status": "link_sent", "artefacts": {"payment_link_id": "plink_test_seed"}},
             ]
-            confirmed = simulate_demo_webhooks(db, mock_results)
+            confirmed, recovered_amt = simulate_demo_webhooks(db, mock_results)
             assert confirmed == 2
+            assert recovered_amt == txs[0].amount + txs[1].amount
             assert txs[0].status == TransactionStatus.RECOVERED
             assert txs[1].status == TransactionStatus.RECOVERED
         finally:

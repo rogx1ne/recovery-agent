@@ -48,7 +48,10 @@ export function Dashboard({ setPage, setSelectedTx }) {
     if (isDemoRunning) return;
     setIsDemoRunning(true);
     setDemoBanner("");
-    setDemoProgress({ completed: 0, total: 10, percent: 0, status: "running" });
+    setDemoProgress({ completed: 0, total: 10, percent: 0, status: "running", phase: "Initializing", current_action: "Starting demo batch runner...", logs: [] });
+
+    const startTime = Date.now();
+    const TIMEOUT_MS = 180000; // 3-minute safety net
 
     try {
       const initResp = await api.runDemoBatch();
@@ -57,18 +60,33 @@ export function Dashboard({ setPage, setSelectedTx }) {
       // Poll every 2 seconds
       const pollTimer = setInterval(async () => {
         try {
+          // Safety timeout check
+          if (Date.now() - startTime > TIMEOUT_MS) {
+            clearInterval(pollTimer);
+            setIsDemoRunning(false);
+            setDemoBanner("⚠ Demo batch is taking longer than expected (~3 mins elapsed). Please check server logs.");
+            await loadData();
+            return;
+          }
+
           const statusResp = await api.getDemoStatus(batchId);
           setDemoProgress(statusResp);
 
-          if (statusResp.status === "completed" || statusResp.completed >= statusResp.total) {
+          if (statusResp.status === "completed" || (statusResp.total > 0 && statusResp.completed >= statusResp.total)) {
             clearInterval(pollTimer);
             setIsDemoRunning(false);
             setDemoBanner(`✓ Demo batch ${batchId} completed successfully! Displaying results below.`);
             setSelectedBatch(batchId);
             await loadData(batchId);
+          } else if (statusResp.status === "failed") {
+            clearInterval(pollTimer);
+            setIsDemoRunning(false);
+            setDemoBanner(`❌ Demo batch failed: ${statusResp.current_action || "Encountered an execution error."}`);
+            setSelectedBatch(batchId);
+            await loadData(batchId);
           }
         } catch {
-          // If polling fails once, keep trying
+          // If polling fails temporarily (network jitter), keep polling until timeout
         }
       }, 2000);
     } catch (err) {

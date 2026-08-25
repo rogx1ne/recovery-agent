@@ -13,7 +13,7 @@ settings = get_settings()
 # connect_args is required for SQLite to allow multi-threaded access from FastAPI
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    connect_args={"check_same_thread": False, "timeout": 30} if "sqlite" in settings.database_url else {},
     echo=(settings.app_env == "development"),
 )
 
@@ -38,7 +38,14 @@ def get_db():
 
 
 def init_db() -> None:
-    """Create all tables defined by models that import Base."""
+    """Create all tables defined by models that import Base and enable SQLite WAL mode."""
     # Import models here so SQLAlchemy registers them before create_all
     from app.models import transaction, audit_log  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    if "sqlite" in settings.database_url:
+        try:
+            with engine.connect() as conn:
+                conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
+                conn.exec_driver_sql("PRAGMA busy_timeout=30000;")
+        except Exception:
+            pass
