@@ -21,7 +21,7 @@ Setup
 Get a free Gemini API key at: https://aistudio.google.com/app/apikey
 Add to .env: GEMINI_API_KEY=AIza...
 
-Cost: the free tier (Gemini 1.5 Flash) is 15 RPM / 1M tokens/day — more than
+Cost: the free tier (Gemini 2.5 Flash Lite) is 15 RPM / 1M tokens/day — more than
 enough for a buildathon demo with hundreds of transactions.
 """
 
@@ -111,8 +111,10 @@ def _call_gemini(
         return _fallback(error_reason)
 
     genai.configure(api_key=api_key)
+    # Active Flash-Lite model (Verified active via google.generativeai endpoint: 2026-08-27)
+    # Fast, direct classification with no extended reasoning budget
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.5-flash-lite",
         system_instruction=_SYSTEM_PROMPT,
         generation_config=genai.GenerationConfig(
             temperature=0.1,            # Low temp for consistent structured output

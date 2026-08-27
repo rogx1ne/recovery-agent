@@ -1,8 +1,9 @@
 // src/api.js — all backend calls in one place
-// Vite proxies /api → localhost:8000, so no CORS issues in dev.
-// In production, set VITE_API_URL to the full backend URL.
-const BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api/v1`
+// Vite proxies /api → localhost:8000 in dev.
+// In production, VITE_API_URL points to the Render backend URL (e.g. https://xyz.onrender.com)
+const rawBase = import.meta.env.VITE_API_URL;
+const BASE_URL = rawBase
+  ? `${rawBase.replace(/\/+$/, "")}/api/v1`
   : "/api/v1";
 
 async function request(method, path, body) {
