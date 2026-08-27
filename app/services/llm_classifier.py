@@ -188,7 +188,7 @@ def generate_recovery_message(
         try:
             import google.generativeai as genai
             genai.configure(api_key=settings.gemini_api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
             prompt = (
                 f"You are a polite customer care agent for an Indian e-commerce store. "
