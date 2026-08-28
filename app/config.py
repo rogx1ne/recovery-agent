@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     # Webhook secret (from Razorpay Dashboard > Webhooks). Leave blank for local dev.
     razorpay_webhook_secret: str = ""
 
-    # Google Gemini API (free tier — https://aistudio.google.com/app/apikey)
+    # Groq API (free tier: 14,400 req/day — https://console.groq.com/keys)
     # Leave blank to use rules-based classifier instead.
+    groq_api_key: str = ""
+
+    # Legacy Gemini API key fallback (optional)
     gemini_api_key: str = ""
 
     # Set to false to force rules-based classification (useful for testing)

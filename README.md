@@ -1,7 +1,7 @@
 # ⚡ Razorpay AI Revenue Recovery Agent
 
 > **Razorpay AI Buildathon Submission** | **Track 03: AI Revenue Recovery**  
-> An autonomous revenue recovery system that detects failed payments, classifies root causes using Google Gemini AI, executes bounded recovery workflows, and tracks every decision in a human-readable audit trail.
+> An autonomous revenue recovery system that detects failed payments, classifies root causes using Groq AI (`openai/gpt-oss-20b`), executes bounded recovery workflows, and tracks every decision in a human-readable audit trail.
 
 ---
 
@@ -25,9 +25,10 @@
 
 ## 🌟 Key Features
 
-1. **🤖 Gemini AI Root Cause Classification**
+1. **🤖 Groq AI Root Cause Classification (`openai/gpt-oss-20b`)**
    - Analyzes raw Razorpay error codes (`card_declined`, `do_not_honour`, `mandate_failed`, `3ds_failed`) alongside transaction metadata.
    - Categorizes failures into 5 normalized buckets and generates a 2-sentence plain-English business explanation for audit logs.
+   - High-throughput free tier (14,400 requests/day) with ultra-low latency inference.
 
 2. **💬 Conversational Hinglish Customer Messaging**
    - Automatically generates empathetic, high-converting **Hinglish WhatsApp / SMS messages** personalized for each customer and failure type.
@@ -62,7 +63,7 @@ Customer Checkout Failure
           │
           ▼
    ┌──────────────┐
-   │ 2. CLASSIFIED│ ──► Gemini AI determines category & plain-English reasoning
+   │ 2. CLASSIFIED│ ──► Groq AI determines category & plain-English reasoning
    └──────────────┘
           │
           ▼
@@ -113,7 +114,7 @@ recovery-agent/
 │   ├── services/
 │   │   ├── razorpay_client.py      # Razorpay SDK Python wrapper (Test Mode)
 │   │   ├── classifier.py           # Substring fallback rule lookup table
-│   │   ├── llm_classifier.py       # Google Gemini AI classification & Hinglish messaging
+│   │   ├── llm_classifier.py       # Groq AI classification & Hinglish messaging
 │   │   ├── decision_policy.py      # Policy table, VIP thresholds, retry gates
 │   │   └── executor.py             # 5-stage recovery pipeline orchestrator
 │   └── routers/
@@ -171,7 +172,7 @@ cp .env.example .env
 python scripts/check_razorpay_setup.py
 ```
 
-*(Optional)* Edit `.env` to add your free **Google Gemini API Key** (`GEMINI_API_KEY=AIzaSy...`) for AI-powered classification and Hinglish messaging.
+*(Optional)* Edit `.env` to add your free **Groq API Key** (`GROQ_API_KEY=gsk_...` from https://console.groq.com/keys) for high-speed AI classification and Hinglish recovery messaging.
 
 ```bash
 # Start FastAPI Server
