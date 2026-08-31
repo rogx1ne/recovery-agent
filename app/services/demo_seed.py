@@ -10,6 +10,7 @@ recovery execution, real webhook handler dispatch, and live progress state.
 """
 
 import logging
+import random
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -21,12 +22,15 @@ from app.services.executor import run_recovery
 
 logger = logging.getLogger(__name__)
 
-# ─── Diverse 10-case test batch (covers all 5 failure categories) ─────────────
+# ─── Diverse 10-case test batch (covers all 5 failure categories + unknown) ───
+# Amounts have realistic per-category bounds and are randomized per run.
 DEMO_BATCH_CASES: list[dict[str, Any]] = [
     # card_declined — retry once then payment link
     {
         "base_payment_id": "pay_Demo_CardDecline_001",
-        "amount": 50000,  # ₹500.00
+        "min_amount": 40000,   # ₹400.00
+        "max_amount": 120000,  # ₹1,200.00
+        "amount": 50000,
         "failure_reason_code": "card_declined",
         "customer_contact": "+919876543210",
         "customer_email": "aarav.patel@example.com",
@@ -36,7 +40,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     },
     {
         "base_payment_id": "pay_Demo_CardDecline_002",
-        "amount": 120000,  # ₹1,200.00
+        "min_amount": 80000,   # ₹800.00
+        "max_amount": 240000,  # ₹2,400.00
+        "amount": 120000,
         "failure_reason_code": "do_not_honour",
         "customer_contact": "+919812345678",
         "customer_email": "neha.sharma@example.com",
@@ -44,10 +50,12 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
         "label": "Card Declined (do_not_honour)",
         "category": "card_declined",
     },
-    # insufficient_fund — payment link only, no retry
+    # insufficient_fund — payment link only, no retry (higher value checkouts)
     {
         "base_payment_id": "pay_Demo_InsufficientFund_001",
-        "amount": 250000,  # ₹2,500.00
+        "min_amount": 200000,  # ₹2,000.00
+        "max_amount": 550000,  # ₹5,500.00
+        "amount": 250000,
         "failure_reason_code": "insufficient_funds",
         "customer_contact": "+919734567890",
         "customer_email": "rohan.gupta@example.com",
@@ -58,7 +66,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     # gateway_technical_error — immediate retry up to 2x
     {
         "base_payment_id": "pay_Demo_GatewayErr_001",
-        "amount": 75000,  # ₹750.00
+        "min_amount": 50000,   # ₹500.00
+        "max_amount": 150000,  # ₹1,500.00
+        "amount": 75000,
         "failure_reason_code": "gateway_technical_error",
         "customer_contact": "+919623456789",
         "customer_email": "priya.verma@example.com",
@@ -68,7 +78,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     },
     {
         "base_payment_id": "pay_Demo_GatewayErr_002",
-        "amount": 30000,  # ₹300.00
+        "min_amount": 25000,   # ₹250.00
+        "max_amount": 80000,   # ₹800.00
+        "amount": 30000,
         "failure_reason_code": "network_error",
         "customer_contact": "+919534567890",
         "customer_email": "vikram.m@example.com",
@@ -79,7 +91,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     # authentication_failed — payment link with instructions
     {
         "base_payment_id": "pay_Demo_AuthFail_001",
-        "amount": 99900,  # ₹999.00
+        "min_amount": 70000,   # ₹700.00
+        "max_amount": 200000,  # ₹2,000.00
+        "amount": 99900,
         "failure_reason_code": "authentication_failed",
         "customer_contact": "+919423456781",
         "customer_email": "ananya.iyer@example.com",
@@ -89,7 +103,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     },
     {
         "base_payment_id": "pay_Demo_AuthFail_002",
-        "amount": 15000,  # ₹150.00
+        "min_amount": 10000,   # ₹100.00
+        "max_amount": 45000,   # ₹450.00
+        "amount": 15000,
         "failure_reason_code": "invalid_otp",
         "customer_contact": "+919312345672",
         "customer_email": "karan.joshi@example.com",
@@ -100,7 +116,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     # subscription_failed — retry mandate
     {
         "base_payment_id": "pay_Demo_SubFail_001",
-        "amount": 49900,  # ₹499.00
+        "min_amount": 29900,   # ₹299.00
+        "max_amount": 79900,   # ₹799.00
+        "amount": 49900,
         "failure_reason_code": "mandate_failed",
         "customer_contact": "+919234567813",
         "customer_email": "divya.nair@example.com",
@@ -110,7 +128,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     },
     {
         "base_payment_id": "pay_Demo_SubFail_002",
-        "amount": 199900,  # ₹1,999.00
+        "min_amount": 129900,  # ₹1,299.00
+        "max_amount": 299900,  # ₹2,999.00
+        "amount": 199900,
         "failure_reason_code": "recurring_charge_failed",
         "customer_contact": "+919123456784",
         "customer_email": "aditya.rao@example.com",
@@ -121,7 +141,9 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
     # unknown
     {
         "base_payment_id": "pay_Demo_Unknown_001",
-        "amount": 5000,  # ₹50.00
+        "min_amount": 5000,    # ₹50.00
+        "max_amount": 30000,   # ₹300.00
+        "amount": 5000,
         "failure_reason_code": "undocumented_issuer_code_42",
         "customer_contact": "+919012345675",
         "customer_email": "sneha.k@example.com",
@@ -130,6 +152,19 @@ DEMO_BATCH_CASES: list[dict[str, Any]] = [
         "category": "unknown",
     },
 ]
+
+
+def get_randomized_amount(case: dict[str, Any]) -> int:
+    """
+    Sample a realistic randomized amount in paise for a demo case.
+    Uses system entropy (no fixed seed) so amounts genuinely vary across runs.
+    """
+    min_amt = case.get("min_amount", case.get("amount", 50000))
+    max_amt = case.get("max_amount", min_amt)
+    if max_amt > min_amt:
+        # Generates clean whole-rupee amounts (step=100 paise) within bounds
+        return random.randrange(min_amt, max_amt + 1, 100)
+    return min_amt
 
 # ─── Live Progress State Store ───────────────────────────────────────────────
 _DEMO_BATCH_STATUS: dict[str, dict[str, Any]] = {}
@@ -220,9 +255,10 @@ def create_demo_transactions(db: Session, batch_id: str) -> list[Transaction]:
 
     for case in DEMO_BATCH_CASES:
         rzp_id = f"{case['base_payment_id']}_{suffix}"
+        amt = get_randomized_amount(case)
         tx = Transaction(
             razorpay_payment_id=rzp_id,
-            amount=case["amount"],
+            amount=amt,
             currency="INR",
             status=TransactionStatus.FAILED,
             failure_reason_code=case["failure_reason_code"],

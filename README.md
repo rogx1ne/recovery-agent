@@ -9,17 +9,19 @@
 
 > *"Don't just identify the problem. Show measured money recovered across a batch, with compliant escalation, stopping rules, and an audit trail."* — **Razorpay Track 03 Bar**
 
-<!-- Measured across a single batch of 10 transactions (DEMO_BATCH) scoped via batch_id with simulated webhook confirmations -->
-*Figures below are scoped to a single 10-transaction batch via `batch_id` (not cumulative across all runs), verified with simulated Razorpay webhook payment confirmations:*
+The demo batch generates **10 realistic failed transactions** with controlled, per-category randomized amounts on every run while guaranteeing all 6 failure and edge-case categories appear. All performance metrics and recovery rates are computed live from actual batch outcomes.
 
-| Metric | Measured Value |
-|---|---|
-| **Total At-Risk Revenue** | **₹8,947.00 (10 transactions)** |
-| **Confirmed Recovered (Webhook)** | **₹5,250.00 (5 transactions)** |
-| **Awaiting Confirmation (`retry_initiated` / `link_sent`)** | **₹3,697.00 (5 transactions)** |
-| **Escalated (Manual Review)** | **₹0.00 (0 transactions)** |
-| **Confirmed Count Recovery Rate** | **50.0% (5 / 10 transactions)** |
-| **Confirmed Value Recovery Rate** | **58.7% (₹5,250.00 / ₹8,947.00)** |
+To view live measured recovery performance on your system:
+- **Web Dashboard:** Click the **"🚀 Run Demo Batch"** button on the frontend dashboard.
+- **CLI Demo Runner:** Execute `python scripts/demo_run.py` in your terminal.
+
+| Metric | Measurement Scope | Typical Batch Output |
+|---|---|---|
+| **Batch Scope** | Scoped strictly via `batch_id` | 10 diverse failure transactions |
+| **Coverage** | All 5 failure categories + unknown | 100% policy paths demonstrated |
+| **Confirmed Recovered** | Authoritative Webhook captures | ~50% count / 55–65% value recovered |
+| **Awaiting Confirmation** | Active retry orders / payment links | Remainder awaiting customer action |
+| **Stopping Rules & Escalation** | Bounded retries / Missing contacts | Compliant escalation with audit log |
 
 ---
 

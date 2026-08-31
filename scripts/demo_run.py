@@ -34,7 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.services.demo_seed import DEMO_BATCH_CASES, generate_batch_id
+from app.services.demo_seed import DEMO_BATCH_CASES, generate_batch_id, get_randomized_amount
 
 
 # ─── Colour helpers (ANSI, gracefully degraded on Windows) ───────────────────
@@ -100,9 +100,10 @@ def main():
     for i, case in enumerate(DEMO_BATCH_CASES, 1):
         label = case["label"]
         category = case["category"]
+        amt = get_randomized_amount(case)
         payload = {
             "razorpay_payment_id": f"{case['base_payment_id']}_{suffix}",
-            "amount": case["amount"],
+            "amount": amt,
             "currency": "INR",
             "status": "failed",
             "failure_reason_code": case["failure_reason_code"],
@@ -116,12 +117,12 @@ def main():
 
         if status_code == 201:
             tx_id = resp["id"]
-            amount_inr = case["amount"] / 100
-            total_at_risk += case["amount"]
+            amount_inr = amt / 100
+            total_at_risk += amt
             created.append({
                 "id": tx_id,
                 "label": label,
-                "amount": case["amount"],
+                "amount": amt,
                 "payment_id": payload["razorpay_payment_id"],
                 "category": category,
             })
